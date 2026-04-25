@@ -1,0 +1,56 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "name": "Naked Pantree Brand Palette",
+  "version": "1.0.0",
+  "description": "Source of truth for Naked Pantree brand colors. See DESIGN_GUIDELINES.md §6 for usage rules.",
+  "primary": {
+    "forestGreen": {
+      "hex": "#2F5D50",
+      "rgb": [47, 93, 80],
+      "role": "Primary brand. App icon background, headers, key CTAs.",
+      "notes": "Hero color. Do not substitute another green."
+    },
+    "warmCream": {
+      "hex": "#F4F1EC",
+      "rgb": [244, 241, 236],
+      "role": "App background, cards, the pantry cabinet in the icon.",
+      "notes": "Pure white is reserved for elevated surfaces (modals over cream)."
+    },
+    "softBrown": {
+      "hex": "#8B6F47",
+      "rgb": [139, 111, 71],
+      "role": "Secondary accents, dividers, pantry/dry-goods category."
+    }
+  },
+  "accent": {
+    "coolBlue": {
+      "hex": "#4A90E2",
+      "rgb": [74, 144, 226],
+      "role": "Fridge / freezer UI only.",
+      "notes": "Reserved for cold storage. Not a generic link or button color."
+    },
+    "mutedOrange": {
+      "hex": "#E9A857",
+      "rgb": [233, 168, 87],
+      "role": "Expiring-soon warnings.",
+      "notes": "Status color. Never decorative."
+    },
+    "softRed": {
+      "hex": "#D64545",
+      "rgb": [214, 69, 69],
+      "role": "Expired items, destructive actions.",
+      "notes": "Status color. Never decorative."
+    }
+  },
+  "rules": {
+    "accessibility": "All production text/background pairings must meet WCAG AA.",
+    "stateCommunication": "Never communicate state with color alone. Always pair with an icon or label.",
+    "iconPalette": [
+      "#2F5D50",
+      "#F4F1EC",
+      "#E9A857",
+      "#D64545",
+      "#8B6F47"
+    ]
+  }
+}
