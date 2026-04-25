@@ -78,29 +78,28 @@ onboarding).
 
 ## 4. Logo
 
-Three approved directions, in priority order:
+The Naked Pantree mark has two parts:
 
-### Concept A — Minimal Icon (Recommended)
+1. **Wordmark** — the lowercase `naked pantree` lockup. See §5 (Typography).
+2. **Icon mark** — an illustrated open pantry cabinet revealing stocked
+   shelves. The full app-icon spec lives in §7.
 
-- Simple pantry box / crate icon.
-- Slight "open door" or "peek inside" visual.
-- Clean, modern lines (Apple-style).
-- Hidden humor: nothing explicit—the name carries the joke.
+### Direction
 
-### Concept B — Barn + Crate Hybrid
+- **Pantry, not crate.** A two-shelf cream cabinet with the door swung
+  open—warm, lived-in, unmistakably a pantry.
+- **Peek inside.** The open door is the entire idea: the contents are the
+  payoff, the name is the punchline.
+- **Illustrated, not line-art.** Soft fills, gentle shading, brand-palette
+  contents on the shelves.
+- **Hidden humor.** Nothing explicit on the mark—the name carries the joke.
 
-- Small barn silhouette.
-- Crate or shelves visible inside.
-- Subtle nod to farm / outdoor-storage use case.
+### Never
 
-### Concept C — The Clever One
-
-- Pantry box with a tiny "missing" lower panel.
-- Implies the "no pants" idea without being obvious.
-- Use only if a stronger personality cue is wanted.
-
-**Never:** add text inside the logo, use a literal pair of pants, or lean
-cartoonish.
+- Add text inside the mark.
+- Use a literal pair of pants.
+- Lean cartoonish, sticker-y, or emoji-styled.
+- Close the cabinet door (we always show what's inside).
 
 ---
 
@@ -171,15 +170,61 @@ The icon must:
 
 - Look clean on the iOS home screen.
 - Not scream "joke app."
-- Still feel unique.
+- Still feel unique at every size.
+- Read as a **pantry being opened**—before any other detail.
 
-### Spec
+### Composition
 
-- Rounded square.
-- Deep green (`#2F5D50`) background.
-- Minimal white line icon of a crate / pantry box.
-- Slight "open" or "peek" visual.
+- **Background:** solid Forest Green `#2F5D50`, full bleed.
+- **Cabinet:** Warm Cream `#F4F1EC`, two shelves, centered.
+- **Door:** swung open to the right, small green knob, casts no hard shadow.
+- **Contents (brand-palette only):**
+  - Top shelf — a glass jar of grains, a jar of red sauce, a milk bottle.
+  - Bottom shelf — a tomato can, a clamp-lid jar of beans, an olive-oil bottle
+    with an herb label.
+- **Style:** illustrated, soft fills, subtle shading. No outlines-only line
+  art. No photoreal textures.
 - **No text. No jokes.** Let the name do the work.
+
+### Construction
+
+- Designed on a full square **1024×1024** canvas.
+- iOS applies the rounded-corner mask automatically—**do not pre-round** the
+  artwork.
+- Keep all critical content inside a centered safe area (~80% of the canvas);
+  corners may be clipped on some platforms.
+- Use simple shapes and strong contrast so the silhouette of the open cabinet
+  reads first, contents second.
+
+### Required sizes
+
+Export from the same 1024×1024 master:
+
+| Size | Use |
+| --- | --- |
+| 1024×1024 | App Store, marketing |
+| 512×512 | macOS / web |
+| 180×180 | iPhone @3x |
+| 120×120 | iPhone @2x |
+| 87×87 | iPhone Settings @3x |
+| 60×60 | iPhone Spotlight / Notifications |
+
+### Small-size rules
+
+At 87×87 and 60×60 the individual jars will compress. That's expected—the
+cabinet shape, open door, and palette must still read. Verify legibility by:
+
+1. Exporting all sizes and viewing on a real device home screen.
+2. Checking Settings, Spotlight, and Notifications surfaces.
+3. Squinting at the 60×60 export—if the open-door silhouette is unclear,
+   simplify the contents (fewer items, larger shapes) before shipping.
+
+### Light / dark mode
+
+The deep green background works in both modes. Verify the cream cabinet has
+sufficient contrast against the system wallpaper in dark mode and against
+light wallpapers; do not ship a separate dark-mode variant unless a real
+contrast problem is found.
 
 ---
 
