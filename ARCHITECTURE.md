@@ -18,14 +18,18 @@ opinionated: restraint is the point.
 - Two or more people in the same household see the same inventory in near
   real time.
 - Users get a local notification before an item expires.
-- Users can attach photos to items (e.g. the back of a waffle-mix box).
+- Users can attach a **primary photo** to an item, plus **secondary
+  reference shots** (e.g. ingredient list, back of a waffle-mix box).
 - The app runs on iPad (adaptive) and on Apple Silicon Macs via "Designed
-  for iPad on Mac."
+  for iPad on Mac" (see §10 for why this is *not* Mac Catalyst).
 
 ### Non-goals (v1.0)
 
-- Web app, Android app, or a separate native macOS app.
-- Barcode scanning, OCR, recipe suggestions.
+These are explicitly out for v1.0. Items we **want to add later** live in §12
+(Future Considerations), not here.
+
+- Web app or Android app.
+- A separate native macOS app or a Mac Catalyst build.
 - Server-side state, accounts, or any backend we operate.
 - Two-way Apple Reminders sync.
 - An Apple Watch app.
@@ -41,7 +45,8 @@ opinionated: restraint is the point.
 | Persistence | Core Data via `NSPersistentCloudKitContainer` |
 | Sync & sharing | CloudKit private DB + shared DB (Record Zone Sharing) |
 | Notifications | `UNUserNotificationCenter` (local only) |
-| Tests | Swift Testing |
+| Unit tests | Swift Testing |
+| UI tests | XCUITest (smoke flows for sidebar, item create, share) |
 | CI / distribution | Xcode Cloud → TestFlight |
 
 ### Why Core Data, not SwiftData
@@ -71,21 +76,28 @@ NakedPantree/
     DesignSystem/                  # tokens from assets/brand, typography, components
     Resources/                     # asset catalog, localized strings
   Packages/
-    Core/                          # local SwiftPM package
+    Core/                          # local SwiftPM package — lives in THIS repo
       Sources/
-        NakedPantreeDomain/        # entities, enums, value types — no Core Data import
-        NakedPantreePersistence/   # NSPersistentCloudKitContainer, repositories, queries
+        NakedPantreeDomain/        # entities, enums, value types, repository
+                                   #   PROTOCOLS — no Core Data, no UIKit
+        NakedPantreePersistence/   # NSPersistentCloudKitContainer-backed
+                                   #   implementations of the protocols
       Tests/
-  NakedPantreeTests/               # app-level integration & UI tests
+  NakedPantreeTests/               # app-level integration tests
+  NakedPantreeUITests/             # XCUITest smoke flows
   assets/brand/                    # existing brand tokens (colors.json)
   DESIGN_GUIDELINES.md
   ARCHITECTURE.md                  # this file
+  DEVELOPMENT.md                   # local setup, build, test, release
+  AGENTS.md                        # guidance for AI coding agents
 ```
 
-The Core SwiftPM package exists from day one. The future macOS CLI and any AI
-query helper will depend on it; the iOS app does too. This keeps the query
-surface honest — anything the CLI needs has to be reachable without importing
-UIKit.
+The Core SwiftPM package lives at `Packages/Core/` **inside this repo** —
+there is no separate repository. The iOS app, the future macOS CLI, and any
+AI query helper all depend on it as a local package. This keeps the query
+surface honest: anything the CLI needs must be reachable without importing
+UIKit, and `NakedPantreeDomain` must compile without a Core Data dependency
+so it can host the repository protocols (see §11).
 
 ---
 
@@ -128,7 +140,7 @@ forward-incompatible client don't crash decode.
 | `id` | UUID | |
 | `name` | String | |
 | `quantity` | Int32 | Default `1` |
-| `unitRaw` | String | Default `"count"` |
+| `unitRaw` | String | `Unit` enum raw, default `"count"` |
 | `expiresAt` | Date? | Drives expiry notifications |
 | `notes` | String? | |
 | `createdAt` | Date | |
@@ -144,13 +156,16 @@ forward-incompatible client don't crash decode.
 | `imageData` | Data? | **External Storage** → CKAsset on sync |
 | `thumbnailData` | Data? | Inline, ~64KB JPEG, drives list views |
 | `caption` | String? | "back of box", "ingredients", … |
-| `sortOrder` | Int16 | Default `0` |
+| `sortOrder` | Int16 | Default `0` — **`0` is the primary photo**; the rest are secondary |
 | `createdAt` | Date | |
 | `item` | `Item?` | Inverse |
 
 A separate entity (rather than a `photoData` attribute on `Item`) so an item
 can carry the front, the ingredient list, and the back of a waffle-mix box
-without growing the `Item` row.
+without growing the `Item` row. The lowest-`sortOrder` photo is treated as
+the **primary**: it's what list rows, grids, and the item header show.
+Secondary photos are reachable from the item detail view via a horizontal
+strip — one tap into a full-screen pager. Capture is covered in §9.
 
 ### Constraints we are *not* using
 
@@ -158,6 +173,40 @@ without growing the `Item` row.
   by `id: UUID` is enforced at the application level on insert.
 - **No required relationships.** CloudKit requires every relationship to be
   optional and bidirectional.
+
+### Enums
+
+Every enum is stored on its entity as a `*Raw: String` attribute (Core
+Data + CloudKit don't preserve Swift enums) and exposed in
+`NakedPantreeDomain` as a `String`-backed enum with an `unknown(String)`
+catch-all so a future client adding a value won't crash older builds.
+
+#### `LocationKind` — on `Location.kindRaw`
+
+| Raw | Use |
+| --- | --- |
+| `pantry` | Default. Dry shelf-stable storage. |
+| `fridge` | Refrigerated. |
+| `freezer` | Frozen. |
+| `dryGoods` | Bulk staples — flour, rice, beans. |
+| `other` | Catch-all (barn shelf, garage cabinet, …). |
+
+#### `Unit` — on `Item.unitRaw`
+
+| Raw | Use |
+| --- | --- |
+| `count` | Default. Discrete items ("3 cans of tomatoes"). |
+| `gram` | Mass, metric. |
+| `kilogram` | Mass, metric. |
+| `ounce` | Mass, US. |
+| `pound` | Mass, US. |
+| `milliliter` | Volume, metric. |
+| `liter` | Volume, metric. |
+| `fluidOunce` | Volume, US. |
+| `package` | Pre-packaged unit ("a box of waffle mix"). |
+
+We deliberately keep this list short for v1.0. New units are an additive
+schema change — see migration notes in §10.
 
 ---
 
@@ -192,6 +241,22 @@ Accepted edge case: if two phones edit `Item.quantity` near-simultaneously,
 the later one wins. This is acceptable for a household-inventory app; we are
 not building OT.
 
+#### Offline edits
+
+The interesting case is two members editing **the same item while both
+offline**. Each write is queued locally and stamped with `updatedAt` (set by
+the writing client) and a CloudKit server-side modification time when the
+record eventually replicates. The merge happens at the property level — so
+if member A bumps `quantity` from 3 → 2 and member B edits `notes`, both
+edits land. If both touch `quantity`, the write whose CloudKit replication
+lands second wins, regardless of who wrote it first locally. Deletes win
+over edits to the same record (CloudKit default).
+
+We do **not** show a "conflict" UI. The user model is "the fridge eventually
+shows the truth," and forcing humans to resolve merges would be worse than
+the very rare miscount. If this turns out to bite real users, the next step
+is per-item CRDT counters on `quantity`, not a conflict modal.
+
 ### Offline behavior
 
 The local SQLite store is the source of truth for the UI. Writes are queued
@@ -224,15 +289,44 @@ The shortest path to a usable app.
 
 | Column | iPhone | iPad / Mac |
 | --- | --- | --- |
-| Sidebar | Locations list (drilled) | Locations list |
-| Content | Items in selected location | Items in selected location |
+| Sidebar | Smart Lists + Locations (drilled) | Smart Lists + Locations |
+| Content | Items in selected list/location | Items in selected list/location |
 | Detail | Item detail (pushed) | Item detail (visible) |
 
 This gives us iPad's two-pane and Mac's three-pane layout for free, with no
 size-class branching code. On iPhone the split view collapses to the standard
 push stack automatically.
 
-We deliberately avoid `TabView` at the root — locations *are* the navigation.
+We deliberately avoid `TabView` at the root — locations *are* the primary
+navigation, and Smart Lists sit above them.
+
+### Sidebar shape
+
+The sidebar has two sections, in this order. The pattern mirrors Apple Mail,
+Reminders, and Notes — users already know it.
+
+```
+Smart Lists
+  ▢ Expiring Soon       (items with expiresAt within 7 days, sorted soonest)
+  ▢ All Items           (every item across every location, with search)
+  ▢ Recently Added      (items added in the last 14 days)
+
+Locations
+  🥫 Kitchen Pantry
+  🧊 Garage Freezer
+  🌽 Barn Shelf
+  …
+```
+
+**Why both:** the user comments on the PR called this out directly. When
+you're doing inventory cleanup you want a *single* location view (focused,
+edit-heavy). When you're deciding what to cook tonight or what's about to
+spoil, you need a *cross-household* view. The sidebar serves both modes
+without modal switching.
+
+Smart Lists are pure projections — they read from the same Core Data store
+as Locations and don't introduce new entities. They are computed via
+`NSPredicate` against the repository protocols defined in §11.
 
 ---
 
@@ -249,6 +343,20 @@ We deliberately avoid `TabView` at the root — locations *are* the navigation.
 - A `NotificationScheduler` service observes `NSManagedObjectContextDidSave`
   and `NSPersistentStoreRemoteChange`. On each event it diffs affected items
   and reschedules / cancels.
+
+### Tap behavior
+
+Every scheduled notification carries `userInfo: ["itemID": item.id.uuidString]`.
+A `UNUserNotificationCenterDelegate` on the app side reads it and routes the
+app to the corresponding `Item` detail via the navigation state's
+`selectedItemID` binding. Routing rules:
+
+- If the item still exists, push it onto the detail column.
+- If the item was deleted (e.g. someone in the household tossed it before
+  you tapped), land on the **Expiring Soon** smart list instead and show a
+  one-line plain banner: "That item is gone."
+- If the app is launched cold from the notification, the routing is applied
+  after the persistent store loads, not during onboarding.
 
 ### Multi-device behavior
 
@@ -278,12 +386,29 @@ Notification copy follows the design guidelines:
   bridge for direct camera capture. We resize on import (max 2048px long
   edge) before persisting.
 
+### Primary vs secondary
+
+A clean interface comes from a clear hierarchy:
+
+- **Primary** (`sortOrder == 0`) is what *every* item-aware surface
+  shows: list rows, grids, item header in detail, share previews.
+- **Secondary** photos sit behind one tap. The item detail view shows a
+  small horizontal strip of thumbnails below the header; tapping any opens
+  a full-screen pager (`TabView` with `.tabViewStyle(.page)`).
+- Reordering is a long-press-and-drag in the strip; whichever photo lands
+  at index 0 becomes the new primary.
+- Deleting the primary promotes the next photo (lowest `sortOrder`)
+  automatically.
+
+The strip is hidden entirely when an item has zero or one photo — no empty
+chrome, no "+1 more" affordance for a single image.
+
 ---
 
 ## 10. Distribution & CI
 
 - Single iOS app target. `iPad` is added to "Supported Destinations." "Mac
-  (Designed for iPad)" is enabled — no Catalyst.
+  (Designed for iPad)" is enabled.
 - **Xcode Cloud** runs on every PR (build + tests) and on merges to `main`
   (TestFlight beta upload, internal group).
 - GitHub Actions is reserved for lint and `swift-format` checks that don't
@@ -293,28 +418,124 @@ Notification copy follows the design guidelines:
   are deployed to Production via the CloudKit Console after the dev schema
   has shipped to a TestFlight build that exercises every new field.
 
+### "Designed for iPad on Mac" vs Mac Catalyst
+
+These are two different Apple technologies. We are using the first, not the
+second:
+
+| | Designed for iPad on Mac (chosen) | Mac Catalyst |
+| --- | --- | --- |
+| What it is | The iPad binary runs unmodified on Apple Silicon Macs. | A separate Mac build target that compiles UIKit code into an AppKit-hosted Mac app. |
+| Build cost | Zero — flip a checkbox in "Supported Destinations." | A second build configuration, second sandbox profile, second set of QA, AppKit bridging where Mac-native behavior is wanted. |
+| Mac feel | iPad app in a Mac window. Right-click works, menu bar is generated, but it's clearly an iPad app. | More Mac-native (windowing, menu items, sidebar styles). |
+| Why we chose this | Mac is a personal convenience for power users, not a product. The iPad layout is already adaptive (§7), so the Mac window inherits it for free. | Reserved for a possible v2 if a real Mac audience emerges. Not before. |
+
+The personal CLI in §12 is a separate concern — it's a command-line
+executable target, not a GUI Mac app.
+
 ---
 
 ## 11. Testing
 
-### Swift Testing covers
+### Repository protocols — the testability boundary
 
-- `NakedPantreeDomain` enums (raw-value stability — breaking these breaks
-  sync).
-- `NotificationScheduler` reschedule logic against an in-memory store.
-- Repository queries (search, expiring-soon window).
-- Migration tests when the model bumps a version.
+The single biggest testability decision: **the data layer is hidden behind
+protocols defined in `NakedPantreeDomain`.** The CloudKit-mirrored
+Core Data implementation lives in `NakedPantreePersistence` and is the only
+type that imports CoreData. Everything above the persistence layer
+(features, view models, the notification scheduler, the future CLI, the
+future AI helper) talks to the protocols, never to `NSManagedObject`
+subclasses or `NSPersistentCloudKitContainer` directly.
 
-### Manual checklist (per release)
+Sketch:
+
+```swift
+// NakedPantreeDomain — no CoreData, no UIKit
+public protocol ItemRepository: Sendable {
+    func items(in: Location.ID) async throws -> [Item]
+    func expiringWithin(_ days: Int) async throws -> [Item]
+    func search(_ query: String) async throws -> [Item]
+    func upsert(_ item: Item) async throws
+    func delete(id: Item.ID) async throws
+}
+
+// NakedPantreePersistence — internal Core Data impl
+struct CoreDataItemRepository: ItemRepository { … }
+
+// Tests — fast, deterministic, no CloudKit
+final class InMemoryItemRepository: ItemRepository { … }
+```
+
+This means the storage layer that *actually* talks to CloudKit is an
+integration concern (covered manually below), but every layer above it is
+unit-testable with no I/O.
+
+### Automated coverage (Swift Testing + XCUITest)
+
+We are not aiming for vanity coverage numbers. We *are* aiming to catch the
+classes of bug that would silently break sync, expiry, or sharing.
+
+#### `NakedPantreeDomain` (pure logic — fastest, biggest count)
+
+- Enum raw-value stability — breaking these breaks sync. One failing assert
+  per existing raw value, plus an `unknown(String)` round-trip test.
+- Date math for `expiringWithin(_:)` (boundary at midnight, DST transition,
+  expired-already inclusion rules).
+- Search query normalization (case, diacritics, whitespace).
+
+#### `NakedPantreePersistence` against an **in-memory Core Data store**
+
+- Every `*Repository` protocol method, end to end, against an
+  `NSPersistentContainer` (no CloudKit) backed by `/dev/null`.
+- Conflict-merge policy: write A, write B with the same `id` and a later
+  `updatedAt`, assert B wins property-wise.
+- Cascade deletes: deleting a `Location` removes its `Item`s and their
+  `ItemPhoto`s.
+- Lightweight migration tests as the model bumps versions.
+
+#### App-level (Swift Testing, app target)
+
+- `NotificationScheduler` against an `InMemoryItemRepository` — schedule,
+  reschedule on edit, cancel on delete, idempotent identifier.
+- Notification routing: a delivered notification with a known `itemID`
+  surfaces the right detail; a missing `itemID` falls back to Expiring Soon.
+- Photo import pipeline: 4032×3024 JPEG in → ≤2048px primary + ~64KB
+  thumbnail out, EXIF stripped, orientation respected.
+- Reminders push (when shipped): given a chosen list id, calling the
+  publish action issues exactly one `EKReminder` with the right title.
+- View models for Smart Lists (Expiring Soon, All Items, Recently Added)
+  against an in-memory repository fixture.
+
+#### XCUITest — UI smoke flows
+
+- Launch → empty state → create first item → it appears in the location
+  list.
+- Sidebar navigation between Smart Lists and Locations on iPhone, iPad,
+  and Mac (Designed for iPad).
+- Share-household sheet opens and dismisses without crashing
+  (we don't actually accept the share in UI tests — that needs a second
+  device).
+
+### Manual checklist (per TestFlight build)
+
+These are the things that genuinely require multiple devices, real iCloud
+accounts, or the photo-roll permission system. They are not "things we
+gave up on" — they are integration checks that no in-process test can
+honestly cover:
 
 - Two phones, same iCloud account → second phone sees inserts within ~5s.
 - Two phones, different accounts, share accepted → same.
 - Airplane-mode write → reconnect → propagates without duplicates.
+- Two members editing the same item while both offline → reconcile per §5.
 - Photo attached on phone A appears on phone B (thumbnail first, full asset
   shortly after).
-- Mac build launches and can read/write.
+- Mac build (Designed for iPad) launches and can read/write.
+- Notification fires at the expected local time and tapping it routes to
+  the item.
 
-CloudKit cannot be meaningfully unit-tested; we don't pretend otherwise.
+If something on this list becomes flaky, the answer is to push it down into
+the automated layer by improving the protocol abstraction, not to add
+another manual step.
 
 ---
 
@@ -347,6 +568,21 @@ Subsequent taps insert an `EKReminder` titled with the item name into that
 list. One-way. Two-way sync (checking the reminder restocks the item) is a
 later decision.
 
+### Barcode scanning, OCR, recipe suggestions
+
+All three were in non-goals during planning; they belong here because we do
+expect to ship them, just not in v1.0.
+
+- **Barcode scanning** — `DataScannerViewController` on iOS, looking up
+  product names against a free product DB (OpenFoodFacts is the obvious
+  start). Fast-path "add by scan" entry on the Items tab.
+- **OCR** — `VisionKit`'s live text on the secondary photo of an item
+  (ingredient list, expiry date stamped on packaging). Read-only at first
+  — the user confirms before anything is written to the model.
+- **Recipe suggestions** — given the household's current inventory and
+  expiring-soon set, suggest recipes that use them. Likely a thin wrapper
+  around the AI helper above; not its own subsystem.
+
 ---
 
 ## 13. Decisions Log
@@ -360,9 +596,14 @@ later decision.
 | 5 | Dual-device notifications accepted | No backend → no dedup. Toggle later if needed. |
 | 6 | `NavigationSplitView` from day one | Free iPad/Mac adaptive layout. |
 | 7 | Local SwiftPM `Core` package | Future CLI and AI helper share the same domain. |
-| 8 | "Designed for iPad on Mac," no Catalyst | Mac is a personal convenience, not a product. |
+| 8 | "Designed for iPad on Mac," no Catalyst | Mac is a personal convenience, not a product. See §10 for the distinction. |
 | 9 | Xcode Cloud for builds | Native TestFlight pipeline; less yak-shaving. |
 | 10 | Reminders integration deferred | Nice-to-have; one-way when it ships. |
+| 11 | Repository protocols in `NakedPantreeDomain` | Everything above storage is unit-testable without CloudKit. |
+| 12 | Smart Lists above Locations in the sidebar | Inventory cleanup wants per-location; cooking/expiry wants cross-household. Both need first-class entry points. |
+| 13 | Notifications stay plain; sass lives elsewhere | Voice rules from `DESIGN_GUIDELINES.md` §9 hold for time-sensitive pings. |
+| 14 | Primary photo = `sortOrder == 0` | One photo per surface above; secondaries are one tap away. |
+| 15 | Barcode/OCR/recipes are *future*, not non-goals | Calling them out separately keeps the v1.0 scope honest without pretending we'll never build them. |
 
 ---
 
