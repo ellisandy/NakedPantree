@@ -130,6 +130,9 @@ Lowercase `naked pantree` works really well. Alternative weighted lockup:
 
 ## 6. Color Palette
 
+> Machine-readable source of truth: [`assets/brand/colors.json`](assets/brand/colors.json).
+> If you change a value here, change it there in the same commit.
+
 ### 🌿 Primary Theme (Farm + Modern)
 
 | Name | Hex | Usage |
