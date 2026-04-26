@@ -25,7 +25,9 @@ voice rules on every user-facing string we add, see `DESIGN_GUIDELINES.md`.
 
 ---
 
-## Phase 0 — Project scaffolding
+## Phase 0 — Project scaffolding ✅
+
+**Status:** Complete (merged on `main`).
 
 **Goal:** an empty Xcode project that builds, tests, and lints cleanly.
 Every later phase assumes this skeleton exists.
@@ -52,16 +54,17 @@ Every later phase assumes this skeleton exists.
 
 **Exit criteria**
 
-- [ ] `xcodebuild` builds the app target on a clean checkout.
-- [ ] `swift test --package-path Packages/Core` passes (with a single
+- [x] `xcodebuild` builds the app target on a clean checkout.
+- [x] `swift test --package-path Packages/Core` passes (with a single
       placeholder test in each module).
-- [ ] `swift-format lint` and `swiftlint` exit zero on the repo.
-- [ ] `DEVELOPMENT.md` first-time setup section is filled in (it's a
-      `TODO` today).
+- [x] `swift-format lint` and `swiftlint` exit zero on the repo.
+- [x] `DEVELOPMENT.md` first-time setup section is filled in.
 
 ---
 
-## Phase 1 — Single-user MVP (local only)
+## Phase 1 — Single-user MVP (local only) 🟡
+
+**Status:** In progress — see sub-milestones below.
 
 **Goal:** a usable inventory app on one device. No iCloud yet.
 
@@ -94,6 +97,23 @@ Every later phase assumes this skeleton exists.
       checklist.
 - [ ] Repository protocol tests pass with both the Core Data
       implementation and an in-memory mock.
+
+**Sub-milestones**
+
+The phase is large enough to land in chunks. Each row tracks one PR.
+
+| # | Title | Status |
+| --- | --- | --- |
+| 1.1 | Domain types + repository protocols | ✅ Merged ([apps#10](https://github.com/ellisandy/NakedPantree/pull/10)) |
+| 1.2a | Core Data stack + `Household` and `Location` repos | ✅ Merged ([apps#11](https://github.com/ellisandy/NakedPantree/pull/11)) |
+| 1.2b | `Item` and `ItemPhoto` repos + cascade-delete tests | ⬜ Next |
+| 1.3 | `NavigationSplitView` shell (sidebar / content / detail) | ⬜ |
+| 1.4 | CRUD wiring for `Location`s and `Item`s | ⬜ |
+| 1.5 | Search across locations + first-launch bootstrap | ⬜ |
+
+> The split is not load-bearing — it's a guide. If a piece of work
+> doesn't fit cleanly, retitle a row or add one. Don't force scope into
+> the wrong row.
 
 ---
 
