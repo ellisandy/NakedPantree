@@ -18,7 +18,7 @@ public final class CoreDataHouseholdRepository: HouseholdRepository, @unchecked 
     }
 
     public func currentHousehold() async throws -> Household {
-        try await container.performBackgroundTask { context in
+        try await container.performBackgroundTaskWithDefaults { [container] context in
             if let existing = try Self.fetchHouseholdRow(in: context) {
                 return Self.makeHousehold(from: existing)
             }
@@ -26,6 +26,9 @@ public final class CoreDataHouseholdRepository: HouseholdRepository, @unchecked 
                 forEntityName: "HouseholdEntity",
                 into: context
             )
+            if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
+                context.assign(row, to: privateStore)
+            }
             let household = Household()
             row.setValue(household.id, forKey: "id")
             row.setValue(household.name, forKey: "name")
@@ -36,13 +39,19 @@ public final class CoreDataHouseholdRepository: HouseholdRepository, @unchecked 
     }
 
     public func update(_ household: Household) async throws {
-        try await container.performBackgroundTask { context in
-            let row =
-                try Self.fetchHouseholdRow(id: household.id, in: context)
-                ?? NSEntityDescription.insertNewObject(
+        try await container.performBackgroundTaskWithDefaults { [container] context in
+            let row: NSManagedObject
+            if let existing = try Self.fetchHouseholdRow(id: household.id, in: context) {
+                row = existing
+            } else {
+                row = NSEntityDescription.insertNewObject(
                     forEntityName: "HouseholdEntity",
                     into: context
                 )
+                if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
+                    context.assign(row, to: privateStore)
+                }
+            }
             row.setValue(household.id, forKey: "id")
             row.setValue(household.name, forKey: "name")
             row.setValue(household.createdAt, forKey: "createdAt")

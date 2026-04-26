@@ -117,9 +117,9 @@ The phase is large enough to land in chunks. Each row tracks one PR.
 
 ---
 
-## Phase 2 — CloudKit sync (private database only) ▶
+## Phase 2 — CloudKit sync (private database only) 🟡
 
-**Status:** Up next.
+**Status:** In progress.
 
 **Goal:** two devices on the same iCloud account stay in sync.
 
@@ -147,6 +147,15 @@ The phase is large enough to land in chunks. Each row tracks one PR.
 - [ ] No `unique constraint` errors at runtime — uniqueness is enforced
       in code at insert time.
 - [ ] CloudKit dev schema matches the model exactly.
+
+**Sub-milestones**
+
+| # | Title | Status |
+| --- | --- | --- |
+| 2.1 | CloudKit container + entitlements + private-store assignment | 🟡 In review |
+| 2.2 | `NSPersistentStoreRemoteChange` observer + view auto-refresh | ⏳ Queued |
+| 2.3 | Account-status banner | ⏳ Queued |
+| 2.4 | CloudKit dev schema deploy verification | ⏳ Queued (gated on Apple-side setup, [issue #23](https://github.com/ellisandy/NakedPantree/issues/23)) |
 
 ---
 

@@ -12,7 +12,7 @@ public final class CoreDataItemPhotoRepository: ItemPhotoRepository, @unchecked 
     }
 
     public func photos(for itemID: Item.ID) async throws -> [ItemPhoto] {
-        try await container.performBackgroundTask { context in
+        try await container.performBackgroundTaskWithDefaults { context in
             let request = NSFetchRequest<NSManagedObject>(entityName: "ItemPhotoEntity")
             request.predicate = NSPredicate(format: "item.id == %@", itemID as CVarArg)
             request.sortDescriptors = [
@@ -24,11 +24,14 @@ public final class CoreDataItemPhotoRepository: ItemPhotoRepository, @unchecked 
     }
 
     public func create(_ photo: ItemPhoto) async throws {
-        try await container.performBackgroundTask { context in
+        try await container.performBackgroundTaskWithDefaults { [container] context in
             let row = NSEntityDescription.insertNewObject(
                 forEntityName: "ItemPhotoEntity",
                 into: context
             )
+            if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
+                context.assign(row, to: privateStore)
+            }
             try Self.assignAttributes(photo, to: row)
             try Self.attachItem(photo.itemID, to: row, in: context)
             try context.save()
@@ -36,13 +39,19 @@ public final class CoreDataItemPhotoRepository: ItemPhotoRepository, @unchecked 
     }
 
     public func update(_ photo: ItemPhoto) async throws {
-        try await container.performBackgroundTask { context in
-            let row =
-                try Self.fetchPhotoRow(id: photo.id, in: context)
-                ?? NSEntityDescription.insertNewObject(
+        try await container.performBackgroundTaskWithDefaults { [container] context in
+            let row: NSManagedObject
+            if let existing = try Self.fetchPhotoRow(id: photo.id, in: context) {
+                row = existing
+            } else {
+                row = NSEntityDescription.insertNewObject(
                     forEntityName: "ItemPhotoEntity",
                     into: context
                 )
+                if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
+                    context.assign(row, to: privateStore)
+                }
+            }
             try Self.assignAttributes(photo, to: row)
             try Self.attachItem(photo.itemID, to: row, in: context)
             try context.save()
@@ -50,7 +59,7 @@ public final class CoreDataItemPhotoRepository: ItemPhotoRepository, @unchecked 
     }
 
     public func delete(id: ItemPhoto.ID) async throws {
-        try await container.performBackgroundTask { context in
+        try await container.performBackgroundTaskWithDefaults { context in
             guard let row = try Self.fetchPhotoRow(id: id, in: context) else { return }
             context.delete(row)
             try context.save()

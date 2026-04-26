@@ -17,7 +17,7 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
     }
 
     public func items(in locationID: Location.ID) async throws -> [Item] {
-        try await container.performBackgroundTask { context in
+        try await container.performBackgroundTaskWithDefaults { context in
             let request = NSFetchRequest<NSManagedObject>(entityName: "ItemEntity")
             request.predicate = NSPredicate(format: "location.id == %@", locationID as CVarArg)
             request.sortDescriptors = [
@@ -28,13 +28,13 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
     }
 
     public func item(id: Item.ID) async throws -> Item? {
-        try await container.performBackgroundTask { context in
+        try await container.performBackgroundTaskWithDefaults { context in
             try Self.fetchItemRow(id: id, in: context).map(Self.makeItem)
         }
     }
 
     public func allItems(in householdID: Household.ID) async throws -> [Item] {
-        try await container.performBackgroundTask { context in
+        try await container.performBackgroundTaskWithDefaults { context in
             let request = NSFetchRequest<NSManagedObject>(entityName: "ItemEntity")
             request.predicate = NSPredicate(
                 format: "location.household.id == %@",
@@ -50,7 +50,7 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
     public func search(_ query: String, in householdID: Household.ID) async throws -> [Item] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return [] }
-        return try await container.performBackgroundTask { context in
+        return try await container.performBackgroundTaskWithDefaults { context in
             let request = NSFetchRequest<NSManagedObject>(entityName: "ItemEntity")
             request.predicate = NSPredicate(
                 format: "location.household.id == %@ AND name CONTAINS[cd] %@",
@@ -65,11 +65,14 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
     }
 
     public func create(_ item: Item) async throws {
-        try await container.performBackgroundTask { context in
+        try await container.performBackgroundTaskWithDefaults { [container] context in
             let row = NSEntityDescription.insertNewObject(
                 forEntityName: "ItemEntity",
                 into: context
             )
+            if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
+                context.assign(row, to: privateStore)
+            }
             try Self.assignAttributes(item, to: row, stampUpdatedAt: false)
             try Self.attachLocation(item.locationID, to: row, in: context)
             try context.save()
@@ -77,13 +80,19 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
     }
 
     public func update(_ item: Item) async throws {
-        try await container.performBackgroundTask { context in
-            let row =
-                try Self.fetchItemRow(id: item.id, in: context)
-                ?? NSEntityDescription.insertNewObject(
+        try await container.performBackgroundTaskWithDefaults { [container] context in
+            let row: NSManagedObject
+            if let existing = try Self.fetchItemRow(id: item.id, in: context) {
+                row = existing
+            } else {
+                row = NSEntityDescription.insertNewObject(
                     forEntityName: "ItemEntity",
                     into: context
                 )
+                if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
+                    context.assign(row, to: privateStore)
+                }
+            }
             try Self.assignAttributes(item, to: row, stampUpdatedAt: true)
             try Self.attachLocation(item.locationID, to: row, in: context)
             try context.save()
@@ -91,7 +100,7 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
     }
 
     public func delete(id: Item.ID) async throws {
-        try await container.performBackgroundTask { context in
+        try await container.performBackgroundTaskWithDefaults { context in
             guard let row = try Self.fetchItemRow(id: id, in: context) else { return }
             context.delete(row)
             try context.save()
