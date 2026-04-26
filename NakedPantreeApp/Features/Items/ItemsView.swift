@@ -10,6 +10,7 @@ struct ItemsView: View {
 
     @Environment(\.repositories) private var repositories
     @Environment(\.remoteChangeMonitor) private var remoteChangeMonitor
+    @Environment(\.notificationScheduler) private var notificationScheduler
     @State private var items: [Item] = []
     @State private var locationName: String?
     @State private var formMode: ItemFormView.Mode?
@@ -161,6 +162,12 @@ struct ItemsView: View {
         if selectedItemID == item.id { selectedItemID = nil }
         do {
             try await repositories.item.delete(id: item.id)
+            // Phase 4.1: cancel any pending expiry notification for
+            // this item so a deleted bottle of milk doesn't ping
+            // someone three days from now. Safe even when no request
+            // was scheduled — `removePendingNotificationRequests` is a
+            // no-op for unknown ids.
+            notificationScheduler.cancel(itemID: item.id)
             if case .location(let id) = selection {
                 await reload(locationID: id)
             }

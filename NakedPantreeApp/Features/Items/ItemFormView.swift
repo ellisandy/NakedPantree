@@ -19,6 +19,7 @@ struct ItemFormView: View {
     let onSaved: @MainActor () -> Void
 
     @Environment(\.repositories) private var repositories
+    @Environment(\.notificationScheduler) private var notificationScheduler
     @Environment(\.dismiss) private var dismiss
     @State private var name: String = ""
     @State private var quantity: Int32 = 1
@@ -137,6 +138,7 @@ struct ItemFormView: View {
         defer { isSaving = false }
 
         do {
+            let saved: Item
             switch mode {
             case .create(let locationID):
                 let item = Item(
@@ -148,6 +150,7 @@ struct ItemFormView: View {
                     notes: resolvedNotes
                 )
                 try await repositories.item.create(item)
+                saved = item
             case .edit(let original):
                 var updated = original
                 updated.name = trimmedName
@@ -156,7 +159,13 @@ struct ItemFormView: View {
                 updated.expiresAt = resolvedExpiry
                 updated.notes = resolvedNotes
                 try await repositories.item.update(updated)
+                saved = updated
             }
+            // Phase 4.1: schedule (or clear) the expiry notification
+            // off the just-persisted item. `scheduleIfNeeded` handles
+            // the nil-expiry case symmetrically with create vs edit —
+            // clearing an expiry on edit cancels the pending request.
+            await notificationScheduler.scheduleIfNeeded(for: saved)
             onSaved()
             dismiss()
         } catch {
