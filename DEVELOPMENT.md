@@ -119,9 +119,15 @@ The pre-commit hook (installed via `scripts/install-hooks.sh`) runs both
 on staged Swift files. To run them manually:
 
 ```bash
-swift-format lint --recursive --strict .
+swift-format lint --recursive --strict --parallel .
 swiftlint lint --strict
 ```
+
+> ⚠️ The `--strict` flag is **required** to match CI. Without it
+> `swift-format lint` exits 0 even on `[LineLength]` and similar
+> warnings — meaning a plain local lint can pass while the
+> `.github/workflows/lint.yml` job fails on the same code. If you're
+> running these in a script, copy the flags exactly.
 
 To auto-format the whole tree:
 
@@ -158,7 +164,9 @@ Before requesting review:
       string the PR adds or edits.
 - [ ] Unit tests added or updated for any new logic in
       `NakedPantreeDomain`, `NakedPantreePersistence`, or app view models.
-- [ ] `swift-format` and `swiftlint` clean.
+- [ ] `swift-format lint --recursive --strict --parallel .` and
+      `swiftlint lint --strict` exit clean. Plain `swift-format lint`
+      without `--strict` exits 0 on warnings — match CI exactly.
 - [ ] Manual checklist (`ARCHITECTURE.md` §11) re-run if the PR touches
       sync, sharing, notifications, or photos.
 - [ ] Screenshot (or short video) attached for any UI-visible change.
