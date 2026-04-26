@@ -30,27 +30,36 @@ public final class CoreDataLocationRepository: LocationRepository, @unchecked Se
     }
 
     public func create(_ location: Location) async throws {
-        try await container.performBackgroundTask { context in
+        try await container.performBackgroundTask { [container] context in
             let row = NSEntityDescription.insertNewObject(
                 forEntityName: "LocationEntity",
                 into: context
             )
+            if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
+                context.assign(row, to: privateStore)
+            }
             try Self.assignAttributes(location, to: row)
-            try Self.attachHousehold(location.householdID, to: row, in: context)
+            try Self.attachHousehold(location.householdID, to: row, in: context, container: container)
             try context.save()
         }
     }
 
     public func update(_ location: Location) async throws {
-        try await container.performBackgroundTask { context in
-            let row =
-                try Self.fetchLocationRow(id: location.id, in: context)
-                ?? NSEntityDescription.insertNewObject(
+        try await container.performBackgroundTask { [container] context in
+            let row: NSManagedObject
+            if let existing = try Self.fetchLocationRow(id: location.id, in: context) {
+                row = existing
+            } else {
+                row = NSEntityDescription.insertNewObject(
                     forEntityName: "LocationEntity",
                     into: context
                 )
+                if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
+                    context.assign(row, to: privateStore)
+                }
+            }
             try Self.assignAttributes(location, to: row)
-            try Self.attachHousehold(location.householdID, to: row, in: context)
+            try Self.attachHousehold(location.householdID, to: row, in: context, container: container)
             try context.save()
         }
     }
@@ -80,11 +89,12 @@ public final class CoreDataLocationRepository: LocationRepository, @unchecked Se
     private static func attachHousehold(
         _ householdID: Household.ID,
         to row: NSManagedObject,
-        in context: NSManagedObjectContext
+        in context: NSManagedObjectContext,
+        container: NSPersistentContainer
     ) throws {
         let household =
             try fetchHouseholdRow(id: householdID, in: context)
-            ?? insertHouseholdRow(id: householdID, in: context)
+            ?? insertHouseholdRow(id: householdID, in: context, container: container)
         row.setValue(household, forKey: "household")
     }
 
@@ -100,12 +110,16 @@ public final class CoreDataLocationRepository: LocationRepository, @unchecked Se
 
     private static func insertHouseholdRow(
         id: Household.ID,
-        in context: NSManagedObjectContext
+        in context: NSManagedObjectContext,
+        container: NSPersistentContainer
     ) -> NSManagedObject {
         let row = NSEntityDescription.insertNewObject(
             forEntityName: "HouseholdEntity",
             into: context
         )
+        if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
+            context.assign(row, to: privateStore)
+        }
         row.setValue(id, forKey: "id")
         row.setValue("My Pantry", forKey: "name")
         row.setValue(Date(), forKey: "createdAt")

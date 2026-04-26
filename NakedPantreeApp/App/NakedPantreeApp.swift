@@ -19,8 +19,16 @@ struct NakedPantreeApp: App {
             // disk. Used by `BootstrapUITests` to regression-test the
             // first-launch race.
             repositories = .makePreview()
+        } else if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            // Unit tests load us via BUNDLE_LOADER, but the simulator has
+            // no iCloud account so `cloudKitContainer()` would fail to
+            // load. Repository contract tests stand up their own
+            // in-memory container — the host repos here are never read.
+            repositories = .makePreview()
         } else {
-            let container = CoreDataStack.persistentContainer()
+            // Phase 2.1: production stack is CloudKit-mirrored. The shared
+            // store is wired but unused until Phase 3 sharing lands.
+            let container = CoreDataStack.cloudKitContainer()
             repositories = Repositories(
                 household: CoreDataHouseholdRepository(container: container),
                 location: CoreDataLocationRepository(container: container),

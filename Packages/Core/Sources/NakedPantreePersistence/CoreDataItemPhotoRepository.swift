@@ -24,11 +24,14 @@ public final class CoreDataItemPhotoRepository: ItemPhotoRepository, @unchecked 
     }
 
     public func create(_ photo: ItemPhoto) async throws {
-        try await container.performBackgroundTask { context in
+        try await container.performBackgroundTask { [container] context in
             let row = NSEntityDescription.insertNewObject(
                 forEntityName: "ItemPhotoEntity",
                 into: context
             )
+            if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
+                context.assign(row, to: privateStore)
+            }
             try Self.assignAttributes(photo, to: row)
             try Self.attachItem(photo.itemID, to: row, in: context)
             try context.save()
@@ -36,13 +39,19 @@ public final class CoreDataItemPhotoRepository: ItemPhotoRepository, @unchecked 
     }
 
     public func update(_ photo: ItemPhoto) async throws {
-        try await container.performBackgroundTask { context in
-            let row =
-                try Self.fetchPhotoRow(id: photo.id, in: context)
-                ?? NSEntityDescription.insertNewObject(
+        try await container.performBackgroundTask { [container] context in
+            let row: NSManagedObject
+            if let existing = try Self.fetchPhotoRow(id: photo.id, in: context) {
+                row = existing
+            } else {
+                row = NSEntityDescription.insertNewObject(
                     forEntityName: "ItemPhotoEntity",
                     into: context
                 )
+                if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
+                    context.assign(row, to: privateStore)
+                }
+            }
             try Self.assignAttributes(photo, to: row)
             try Self.attachItem(photo.itemID, to: row, in: context)
             try context.save()

@@ -103,8 +103,12 @@ so it can host the repository protocols (see §11).
 
 ## 4. Domain Model
 
-Four entities. Relationships are optional with inverses, every attribute has a
-default — both are CloudKit constraints, not stylistic choices.
+Four entities. Relationships are optional with inverses, and every attribute
+is either optional or has a default — both are CloudKit constraints, not
+stylistic choices. Identity attributes (`id`, `createdAt`, `updatedAt`,
+`name`) are modeled as optional because there is no meaningful schema-level
+default for a UUID or a creation timestamp; the repository layer always
+sets them on insert.
 
 ### Household
 

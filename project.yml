@@ -53,6 +53,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: NakedPantreeApp/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: NakedPantreeApp/Resources/NakedPantree.entitlements
 
   NakedPantreeTests:
     type: bundle.unit-test

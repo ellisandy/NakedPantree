@@ -65,11 +65,14 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
     }
 
     public func create(_ item: Item) async throws {
-        try await container.performBackgroundTask { context in
+        try await container.performBackgroundTask { [container] context in
             let row = NSEntityDescription.insertNewObject(
                 forEntityName: "ItemEntity",
                 into: context
             )
+            if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
+                context.assign(row, to: privateStore)
+            }
             try Self.assignAttributes(item, to: row, stampUpdatedAt: false)
             try Self.attachLocation(item.locationID, to: row, in: context)
             try context.save()
@@ -77,13 +80,19 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
     }
 
     public func update(_ item: Item) async throws {
-        try await container.performBackgroundTask { context in
-            let row =
-                try Self.fetchItemRow(id: item.id, in: context)
-                ?? NSEntityDescription.insertNewObject(
+        try await container.performBackgroundTask { [container] context in
+            let row: NSManagedObject
+            if let existing = try Self.fetchItemRow(id: item.id, in: context) {
+                row = existing
+            } else {
+                row = NSEntityDescription.insertNewObject(
                     forEntityName: "ItemEntity",
                     into: context
                 )
+                if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
+                    context.assign(row, to: privateStore)
+                }
+            }
             try Self.assignAttributes(item, to: row, stampUpdatedAt: true)
             try Self.attachLocation(item.locationID, to: row, in: context)
             try context.save()
