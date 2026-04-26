@@ -104,7 +104,9 @@ public enum CoreDataStack {
     /// or `nil` for single-store containers (tests, previews). Repositories
     /// call `context.assign(_:to:)` with this when inserting new objects so
     /// they land in the user's private database, not the shared one.
-    public static func privateCloudKitStore(in container: NSPersistentContainer) -> NSPersistentStore? {
+    public static func privateCloudKitStore(
+        in container: NSPersistentContainer
+    ) -> NSPersistentStore? {
         container.persistentStoreCoordinator.persistentStores.first { store in
             store.url?.lastPathComponent.contains("-private.sqlite") == true
         }

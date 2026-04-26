@@ -39,7 +39,12 @@ public final class CoreDataLocationRepository: LocationRepository, @unchecked Se
                 context.assign(row, to: privateStore)
             }
             try Self.assignAttributes(location, to: row)
-            try Self.attachHousehold(location.householdID, to: row, in: context, container: container)
+            try Self.attachHousehold(
+                location.householdID,
+                to: row,
+                in: context,
+                container: container
+            )
             try context.save()
         }
     }
@@ -59,7 +64,12 @@ public final class CoreDataLocationRepository: LocationRepository, @unchecked Se
                 }
             }
             try Self.assignAttributes(location, to: row)
-            try Self.attachHousehold(location.householdID, to: row, in: context, container: container)
+            try Self.attachHousehold(
+                location.householdID,
+                to: row,
+                in: context,
+                container: container
+            )
             try context.save()
         }
     }
