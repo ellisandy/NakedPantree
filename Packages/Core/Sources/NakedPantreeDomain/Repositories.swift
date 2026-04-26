@@ -2,10 +2,12 @@ import Foundation
 
 /// Read and update the active household.
 ///
-/// `currentHousehold()` is fetch-or-create: on first call it bootstraps a
-/// default household named "My Pantry" with one default `Location` named
-/// "Kitchen" (Phase 1 exit criterion in `ROADMAP.md`). Subsequent calls
-/// return the same record. Callers don't need to know about bootstrap.
+/// `currentHousehold()` is fetch-or-create: on first call it creates a
+/// default household named "My Pantry" and returns it; subsequent calls
+/// return the same record. Cross-entity bootstrap (creating the default
+/// `"Kitchen"` location described in `ARCHITECTURE.md` §6) is the
+/// responsibility of an app-level startup step that calls into both
+/// repositories — the household repo stays narrowly scoped to its entity.
 public protocol HouseholdRepository: Sendable {
     func currentHousehold() async throws -> Household
     func update(_ household: Household) async throws

@@ -61,6 +61,10 @@ targets:
       - NakedPantreeTests
     dependencies:
       - target: NakedPantree
+      - package: Core
+        product: NakedPantreeDomain
+      - package: Core
+        product: NakedPantreePersistence
     settings:
       base:
         BUNDLE_LOADER: "$(TEST_HOST)"

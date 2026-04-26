@@ -143,6 +143,25 @@ agent-authored PRs too. In particular: update `ARCHITECTURE.md` in the
 same PR if the change touches the schema, an enum, or a repository
 protocol.
 
+### `ROADMAP.md` is a living document
+
+When a PR completes — or introduces — an interim milestone, update
+`ROADMAP.md` in the same branch:
+
+- Tick the exit-criteria checkboxes the PR satisfies.
+- Mark the phase status at the top of its section: `✅ Complete`,
+  `🟡 In progress`, or leave blank for upcoming.
+- If a phase is large enough to land across multiple PRs, maintain a
+  **Sub-milestones** table inside that phase. Phase 1 carries the
+  pattern: one row per PR with title, status, and a PR link once
+  it's open. The split is a guide, not a contract — retitle or add
+  rows when scope shifts.
+
+Bundle the roadmap edit into the PR that does the work, **not** a
+follow-up PR. The doc reflects state as-of-merge: by the time the PR
+lands on `main`, anyone reading `ROADMAP.md` should see the work
+already counted.
+
 ---
 
 ## 5. Things that look fine but aren't

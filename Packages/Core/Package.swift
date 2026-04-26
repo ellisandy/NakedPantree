@@ -21,7 +21,8 @@ let package = Package(
         .target(name: "NakedPantreeDomain"),
         .target(
             name: "NakedPantreePersistence",
-            dependencies: ["NakedPantreeDomain"]
+            dependencies: ["NakedPantreeDomain"],
+            resources: [.process("Model/NakedPantree.xcdatamodeld")]
         ),
         .testTarget(
             name: "NakedPantreeDomainTests",
