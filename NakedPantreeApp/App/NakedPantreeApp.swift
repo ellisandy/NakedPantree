@@ -4,6 +4,7 @@ import Foundation
 import NakedPantreeDomain
 import NakedPantreePersistence
 import SwiftUI
+import UserNotifications
 
 @main
 struct NakedPantreeApp: App {
@@ -13,6 +14,7 @@ struct NakedPantreeApp: App {
     private let remoteChangeMonitor: RemoteChangeMonitor
     private let accountStatusMonitor: AccountStatusMonitor
     private let householdSharing: CloudHouseholdSharingService?
+    private let notificationScheduler: NotificationScheduler
 
     init() {
         if SnapshotFixtures.isSnapshotMode {
@@ -23,6 +25,7 @@ struct NakedPantreeApp: App {
             remoteChangeMonitor = RemoteChangeMonitor()
             accountStatusMonitor = AccountStatusMonitor()
             householdSharing = nil
+            notificationScheduler = NotificationScheduler()
         } else if ProcessInfo.processInfo.environment["EMPTY_STORE"] == "1" {
             // UI-test escape hatch: empty in-memory repos that exercise
             // the real bootstrap flow without persisting anything to
@@ -32,6 +35,7 @@ struct NakedPantreeApp: App {
             remoteChangeMonitor = RemoteChangeMonitor()
             accountStatusMonitor = AccountStatusMonitor()
             householdSharing = nil
+            notificationScheduler = NotificationScheduler()
         } else if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
             // Unit tests load us via BUNDLE_LOADER, but the simulator has
             // no iCloud account so `cloudKitContainer()` would fail to
@@ -41,6 +45,7 @@ struct NakedPantreeApp: App {
             remoteChangeMonitor = RemoteChangeMonitor()
             accountStatusMonitor = AccountStatusMonitor()
             householdSharing = nil
+            notificationScheduler = NotificationScheduler()
         } else {
             // Phase 2.1: production stack is CloudKit-mirrored. Phase 3
             // adds the sharing service against the same container.
@@ -68,6 +73,7 @@ struct NakedPantreeApp: App {
             // invite. The delegate is instantiated by the system before
             // this init runs, so a static var is the simplest seam.
             NakedPantreeAppDelegate.shareAcceptance = CloudShareAcceptance(container: container)
+            notificationScheduler = NotificationScheduler(center: .current())
         }
     }
 
@@ -78,6 +84,7 @@ struct NakedPantreeApp: App {
                 .environment(\.remoteChangeMonitor, remoteChangeMonitor)
                 .environment(\.accountStatusMonitor, accountStatusMonitor)
                 .environment(\.householdSharing, householdSharing)
+                .environment(\.notificationScheduler, notificationScheduler)
         }
     }
 }

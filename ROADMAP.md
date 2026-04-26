@@ -196,7 +196,7 @@ household.
 | --- | --- | --- |
 | 3.1 | `CKShare` creation + `UICloudSharingController` bridge + Share Household button | ✅ Merged ([apps#32](https://github.com/ellisandy/NakedPantree/pull/32)) |
 | 3.2 | Share-acceptance handler (`UIApplicationDelegateAdaptor`) | ✅ Merged ([apps#33](https://github.com/ellisandy/NakedPantree/pull/33)) |
-| 3.3 | Cross-store write routing (private vs shared on insert) + verification runbook | 🟡 In review |
+| 3.3 | Cross-store write routing (private vs shared on insert) + verification runbook | ✅ Merged ([apps#34](https://github.com/ellisandy/NakedPantree/pull/34)) |
 
 ---
 
@@ -227,6 +227,14 @@ household.
 - [ ] Tapping the notification opens the app on that item's detail.
 - [ ] On two devices on the same household, both fire — accepted per
       `ARCHITECTURE.md` decisions log #5.
+
+**Sub-milestones**
+
+| # | Title | Status |
+| --- | --- | --- |
+| 4.1 | `NotificationScheduler` + lazy permission + scheduling on item save/delete | 🟡 In review |
+| 4.2 | `NSManagedObjectContextDidSave` / `NSPersistentStoreRemoteChange` observation + tap-to-deep-link routing | ⏳ Pending |
+| 4.3 | Voice-review of notification copy + two-device verification runbook | ⏳ Pending |
 
 ---
 
