@@ -162,6 +162,36 @@ follow-up PR. The doc reflects state as-of-merge: by the time the PR
 lands on `main`, anyone reading `ROADMAP.md` should see the work
 already counted.
 
+### Tag every roadmap milestone
+
+Each PR that completes a roadmap row gets an annotated git tag on the
+merge commit. Two namespaces, separate jobs:
+
+| Pattern | When to apply | Example |
+| --- | --- | --- |
+| `phase-<N>.<M>` | A sub-milestone PR merges. Tag points at the merge commit on `main`. | `phase-1.2a` (Core Data stack + Household/Location repos) |
+| `phase-<N>` | The final sub-milestone of a phase merges. Same commit as the closing sub-milestone tag — annotates "Phase N done" at a glance. | `phase-1` (lives on the same commit as `phase-1.5`) |
+| `v<X>.<Y>.<Z>` | Builds shipped to TestFlight / App Store. Triggers the `Screenshots` workflow and (when set up) the TestFlight upload. Pre-1.0 uses `v0.<phase>.<fix>`. | `v0.1.0` for the first Phase 1 build to TestFlight |
+
+How to tag (post-merge, from the main checkout):
+
+```bash
+git fetch origin main
+git tag -a phase-1.2a <merge-sha> -m "Phase 1.2a — Core Data stack + Household and Location repos (apps#11)"
+git push origin phase-1.2a
+```
+
+Conventions inside the tag message:
+
+- One-line summary that mirrors the PR title — past-tense, no period.
+- Reference the PR with `apps#<n>` so the tag is greppable.
+- For phase-closing tags (`phase-N`), enumerate the sub-milestones.
+
+Tags are permanent. Don't delete or move them once pushed — `Screenshots`
+and the future TestFlight workflow consume them. If you tagged the
+wrong commit, push a corrected tag with a `-fix` suffix rather than
+re-using the original name.
+
 ---
 
 ## 5. Things that look fine but aren't
