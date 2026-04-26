@@ -70,11 +70,13 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
                 forEntityName: "ItemEntity",
                 into: context
             )
-            if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
-                context.assign(row, to: privateStore)
-            }
             try Self.assignAttributes(item, to: row, stampUpdatedAt: false)
-            try Self.attachLocation(item.locationID, to: row, in: context)
+            // Set parent first so we can route the new row to the same
+            // store the parent location lives in — see
+            // `CoreDataLocationRepository.assignToParentStore` for the
+            // CloudKit cross-store-relationship rationale.
+            let location = try Self.attachLocation(item.locationID, to: row, in: context)
+            Self.assignToParentStore(row, parent: location, container: container, in: context)
             try context.save()
         }
     }
@@ -82,19 +84,27 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
     public func update(_ item: Item) async throws {
         try await container.performBackgroundTaskWithDefaults { [container] context in
             let row: NSManagedObject
+            let isNew: Bool
             if let existing = try Self.fetchItemRow(id: item.id, in: context) {
                 row = existing
+                isNew = false
             } else {
                 row = NSEntityDescription.insertNewObject(
                     forEntityName: "ItemEntity",
                     into: context
                 )
-                if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
-                    context.assign(row, to: privateStore)
-                }
+                isNew = true
             }
             try Self.assignAttributes(item, to: row, stampUpdatedAt: true)
-            try Self.attachLocation(item.locationID, to: row, in: context)
+            let location = try Self.attachLocation(item.locationID, to: row, in: context)
+            if isNew {
+                Self.assignToParentStore(
+                    row,
+                    parent: location,
+                    container: container,
+                    in: context
+                )
+            }
             try context.save()
         }
     }
@@ -126,16 +136,36 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
     /// referenced location row doesn't exist yet, we don't insert a
     /// stub. Items must be created against a real location; the
     /// alternative leaves dangling rows on a typo'd `locationID`.
+    /// Returns the parent location (or `nil` if not found) so the
+    /// caller can route the child's store assignment.
+    @discardableResult
     private static func attachLocation(
         _ locationID: Location.ID,
         to row: NSManagedObject,
         in context: NSManagedObjectContext
-    ) throws {
+    ) throws -> NSManagedObject? {
         let request = NSFetchRequest<NSManagedObject>(entityName: "LocationEntity")
         request.predicate = NSPredicate(format: "id == %@", locationID as CVarArg)
         request.fetchLimit = 1
         let location = try context.fetch(request).first
         row.setValue(location, forKey: "location")
+        return location
+    }
+
+    /// Routes a new item to the same store as its parent location —
+    /// CloudKit rejects cross-store relationships at save time. Falls
+    /// back to the private store on single-store containers (tests).
+    private static func assignToParentStore(
+        _ row: NSManagedObject,
+        parent: NSManagedObject?,
+        container: NSPersistentContainer,
+        in context: NSManagedObjectContext
+    ) {
+        if let parentStore = parent?.objectID.persistentStore {
+            context.assign(row, to: parentStore)
+        } else if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
+            context.assign(row, to: privateStore)
+        }
     }
 
     private static func fetchItemRow(

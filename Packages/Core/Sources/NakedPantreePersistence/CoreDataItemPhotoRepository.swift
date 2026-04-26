@@ -29,11 +29,12 @@ public final class CoreDataItemPhotoRepository: ItemPhotoRepository, @unchecked 
                 forEntityName: "ItemPhotoEntity",
                 into: context
             )
-            if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
-                context.assign(row, to: privateStore)
-            }
             try Self.assignAttributes(photo, to: row)
-            try Self.attachItem(photo.itemID, to: row, in: context)
+            // Set parent first, then assign new row to the same store —
+            // see `CoreDataLocationRepository.assignToParentStore` for
+            // the cross-store-relationship rationale.
+            let item = try Self.attachItem(photo.itemID, to: row, in: context)
+            Self.assignToParentStore(row, parent: item, container: container, in: context)
             try context.save()
         }
     }
@@ -41,19 +42,27 @@ public final class CoreDataItemPhotoRepository: ItemPhotoRepository, @unchecked 
     public func update(_ photo: ItemPhoto) async throws {
         try await container.performBackgroundTaskWithDefaults { [container] context in
             let row: NSManagedObject
+            let isNew: Bool
             if let existing = try Self.fetchPhotoRow(id: photo.id, in: context) {
                 row = existing
+                isNew = false
             } else {
                 row = NSEntityDescription.insertNewObject(
                     forEntityName: "ItemPhotoEntity",
                     into: context
                 )
-                if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
-                    context.assign(row, to: privateStore)
-                }
+                isNew = true
             }
             try Self.assignAttributes(photo, to: row)
-            try Self.attachItem(photo.itemID, to: row, in: context)
+            let item = try Self.attachItem(photo.itemID, to: row, in: context)
+            if isNew {
+                Self.assignToParentStore(
+                    row,
+                    parent: item,
+                    container: container,
+                    in: context
+                )
+            }
             try context.save()
         }
     }
@@ -75,16 +84,33 @@ public final class CoreDataItemPhotoRepository: ItemPhotoRepository, @unchecked 
         row.setValue(photo.createdAt, forKey: "createdAt")
     }
 
+    @discardableResult
     private static func attachItem(
         _ itemID: Item.ID,
         to row: NSManagedObject,
         in context: NSManagedObjectContext
-    ) throws {
+    ) throws -> NSManagedObject? {
         let request = NSFetchRequest<NSManagedObject>(entityName: "ItemEntity")
         request.predicate = NSPredicate(format: "id == %@", itemID as CVarArg)
         request.fetchLimit = 1
         let item = try context.fetch(request).first
         row.setValue(item, forKey: "item")
+        return item
+    }
+
+    /// Routes a new photo to the same store as its parent item —
+    /// CloudKit rejects cross-store relationships at save time.
+    private static func assignToParentStore(
+        _ row: NSManagedObject,
+        parent: NSManagedObject?,
+        container: NSPersistentContainer,
+        in context: NSManagedObjectContext
+    ) {
+        if let parentStore = parent?.objectID.persistentStore {
+            context.assign(row, to: parentStore)
+        } else if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
+            context.assign(row, to: privateStore)
+        }
     }
 
     private static func fetchPhotoRow(

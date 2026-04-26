@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import CoreData
 import Foundation
 import Testing
@@ -86,6 +87,25 @@ struct HouseholdRepositoryContractTests {
         let refetched = try await household.currentHousehold()
         #expect(refetched.id == current.id)
         #expect(refetched.name == "Rev's Place")
+    }
+
+    @Test(
+        "ensurePrivateHousehold matches currentHousehold on single-store containers",
+        arguments: RepositoryFactory.all)
+    func ensurePrivateHouseholdIsIdempotent(factory: RepositoryFactory) async throws {
+        // Single-store containers (in-memory + the test-only Core Data
+        // inMemoryContainer) have no shared store, so the private-only
+        // path resolves to the same household as `currentHousehold()`.
+        // Multi-store divergence is verified on real devices per
+        // `DEVELOPMENT.md` §5b.
+        let bundle = factory.make()
+        let household = bundle.household
+        let priv = try await household.ensurePrivateHousehold()
+        let again = try await household.ensurePrivateHousehold()
+        let current = try await household.currentHousehold()
+        #expect(priv.id == again.id)
+        #expect(priv.id == current.id)
+        #expect(priv.name == "My Pantry")
     }
 }
 

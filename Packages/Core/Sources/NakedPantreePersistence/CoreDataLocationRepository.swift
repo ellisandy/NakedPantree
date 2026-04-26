@@ -35,41 +35,55 @@ public final class CoreDataLocationRepository: LocationRepository, @unchecked Se
                 forEntityName: "LocationEntity",
                 into: context
             )
-            if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
-                context.assign(row, to: privateStore)
-            }
             try Self.assignAttributes(location, to: row)
-            try Self.attachHousehold(
+            // Set the parent relationship FIRST so the parent's store
+            // is known, then assign the new row to that same store.
+            // CloudKit rejects cross-store relationships at save time;
+            // assigning before attaching the parent is what would have
+            // landed a recipient's new locations in their private store
+            // even when the parent household is shared.
+            let household = try Self.attachHousehold(
                 location.householdID,
                 to: row,
                 in: context,
                 container: container
             )
+            Self.assignToParentStore(row, parent: household, in: context, container: container)
             try context.save()
         }
     }
 
     public func update(_ location: Location) async throws {
         try await container.performBackgroundTaskWithDefaults { [container] context in
+            // Existing rows already live in a store — Core Data saves
+            // them there. Only the lazy-insert branch needs routing.
             let row: NSManagedObject
+            let isNew: Bool
             if let existing = try Self.fetchLocationRow(id: location.id, in: context) {
                 row = existing
+                isNew = false
             } else {
                 row = NSEntityDescription.insertNewObject(
                     forEntityName: "LocationEntity",
                     into: context
                 )
-                if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
-                    context.assign(row, to: privateStore)
-                }
+                isNew = true
             }
             try Self.assignAttributes(location, to: row)
-            try Self.attachHousehold(
+            let household = try Self.attachHousehold(
                 location.householdID,
                 to: row,
                 in: context,
                 container: container
             )
+            if isNew {
+                Self.assignToParentStore(
+                    row,
+                    parent: household,
+                    in: context,
+                    container: container
+                )
+            }
             try context.save()
         }
     }
@@ -95,17 +109,37 @@ public final class CoreDataLocationRepository: LocationRepository, @unchecked Se
     /// created lazily if no row exists yet — covers the case where a
     /// caller inserts a location before `HouseholdRepository.currentHousehold()`
     /// has been awaited (rare, but cheaper to handle than to require the
-    /// caller to sequence them).
+    /// caller to sequence them). Returns the parent household so the
+    /// caller can route the child's store assignment.
+    @discardableResult
     private static func attachHousehold(
         _ householdID: Household.ID,
         to row: NSManagedObject,
         in context: NSManagedObjectContext,
         container: NSPersistentContainer
-    ) throws {
+    ) throws -> NSManagedObject {
         let household =
             try fetchHouseholdRow(id: householdID, in: context)
             ?? insertHouseholdRow(id: householdID, in: context, container: container)
         row.setValue(household, forKey: "household")
+        return household
+    }
+
+    /// Mirrors the new row to the parent's store so CloudKit can
+    /// replicate the relationship within a single store. Falls back to
+    /// the private store for single-store containers (tests, previews)
+    /// where the parent has no resolvable persistent store yet.
+    private static func assignToParentStore(
+        _ row: NSManagedObject,
+        parent: NSManagedObject,
+        in context: NSManagedObjectContext,
+        container: NSPersistentContainer
+    ) {
+        if let parentStore = parent.objectID.persistentStore {
+            context.assign(row, to: parentStore)
+        } else if let privateStore = CoreDataStack.privateCloudKitStore(in: container) {
+            context.assign(row, to: privateStore)
+        }
     }
 
     private static func fetchHouseholdRow(
