@@ -47,32 +47,27 @@ and ask the user first.
   re-read §3 and §9 of `DESIGN_GUIDELINES.md`.
 - **Don't add a backend.** v1.0 is iCloud-only. If you find yourself
   reaching for a server, you're solving the wrong problem.
-- **Use a git worktree for every task** — see §3 below. Do not switch
-  branches in the main checkout while another task is in flight.
+- **Don't have two tasks in flight in the same checkout.** Use a worktree
+  if the environment supports it; otherwise commit / push / open a PR
+  before switching branches. See §3.
 
 ---
 
-## 3. Use a git worktree for every task
+## 3. Branch isolation: worktrees when supported, serial branches otherwise
 
-This repo expects parallel work. Multiple agents (or one agent across
-multiple sessions) regularly have independent branches in flight.
-Switching branches in the main checkout corrupts in-progress work and
-makes review history confusing. Worktrees fix this.
+This repo expects multiple branches in flight at once. Switching branches
+in a single checkout while another task is mid-edit corrupts in-progress
+work and confuses review history. There are two ways to avoid that — pick
+the one your environment supports.
 
-### The rule
+### Preferred: git worktrees
 
-- **Every new task starts with `git worktree add`.** Never `git checkout`
-  another branch in the main checkout to do new work.
-- **One worktree per branch.** Don't share worktrees across tasks.
-- **Clean up when done.** After the PR merges, remove the worktree.
-
-### How
+When the environment supports it, each new task gets its own worktree:
 
 ```bash
 # From the main checkout. Branch name follows DEVELOPMENT.md §4 conventions.
 git worktree add ../NakedPantree-<short-name> -b claude/<short-name>
 
-# Work inside it.
 cd ../NakedPantree-<short-name>
 # ... make commits, push, open PR ...
 
@@ -82,20 +77,37 @@ git worktree remove ../NakedPantree-<short-name>
 git branch -d claude/<short-name>
 ```
 
+### Known limitation: hosted commit-signing services
+
+Some Claude Code hosted environments use a managed commit-signing service
+that rejects signing requests issued from a worktree (HTTP 400
+`"missing source"`) but signs cleanly from the main checkout. Confirmed
+with an empty-commit test from each location. If you hit it:
+
+- **Don't reach for `--no-verify` or `-c commit.gpgsign=false`.** That
+  produces unsigned commits and a downstream policy headache.
+- **Fall back to serial branches in the main checkout.** Only one task
+  in flight at a time. Commit, push, and open the PR before starting the
+  next one.
+- **Don't keep uncommitted changes when you switch branches.** Stash or
+  commit first.
+
+A quick way to check the current environment: from a worktree, run
+`git commit --allow-empty -m "signing test"`. If it fails, you're in a
+fall-back environment.
+
 ### When using the Claude Code `Agent` tool
 
-The `Agent` tool accepts an `isolation: "worktree"` parameter that
-creates and cleans up a worktree automatically. Prefer that to manual
-`git worktree add` when delegating a self-contained task to a sub-agent.
-The agent's branch and final path come back in the result if any commits
-were made; the worktree is auto-removed if no changes were made.
+`Agent` accepts an `isolation: "worktree"` parameter that creates and
+cleans up a worktree automatically. The same signing limitation applies —
+if the sub-agent's commits fail to sign in its worktree, prefer running
+the work directly in the main checkout instead.
 
-### When *not* to use a worktree
+### When *not* to isolate at all
 
 - One-line edits the user is watching live (e.g. fixing a typo they just
-  pointed out). Switching to a worktree adds friction with no benefit.
-- Pure read-only investigation. Read what you need from the main
-  checkout — no branch involved.
+  pointed out). Branch switching adds friction with no benefit.
+- Pure read-only investigation. Read what you need; no branch involved.
 
 ---
 
@@ -149,10 +161,12 @@ A short list of traps that have already cost time:
   the navigation; see `ARCHITECTURE.md` §7.
 - **Putting humor in error messages, permission requests, billing, or
   legal text.** See `DESIGN_GUIDELINES.md` §9 — those are off-limits.
-- **`git checkout`-ing a different branch in the main checkout.** Use a
-  worktree. See §3.
-- **Skipping `--no-verify` discussions.** Don't use it without explicit
-  user permission, even if a hook is annoying. Fix the hook or the code.
+- **Switching branches in the main checkout while another task is mid-edit.**
+  See §3 for the worktree workflow and the signing-service caveat.
+- **Reaching for `--no-verify` to bypass a failing hook.** Don't, without
+  explicit user permission. Fix the hook or the code.
+- **Assuming worktrees just work.** They don't, in every environment —
+  re-read §3.
 
 ---
 
