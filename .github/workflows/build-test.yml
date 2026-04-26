@@ -1,0 +1,68 @@
+name: Build & Test
+
+on:
+  pull_request:
+    paths:
+      - "**/*.swift"
+      - "Packages/**"
+      - "NakedPantreeApp/**"
+      - "NakedPantreeTests/**"
+      - "NakedPantreeUITests/**"
+      - "project.yml"
+      - ".github/workflows/build-test.yml"
+  push:
+    branches: [main]
+
+concurrency:
+  group: build-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core-package-tests:
+    name: Core package (swift test)
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain versions
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: swift test
+        working-directory: Packages/Core
+        run: swift test
+
+  app-build-test:
+    name: App build & test (iOS Simulator)
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain versions
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: Build & test
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project NakedPantree.xcodeproj \
+            -scheme NakedPantree \
+            -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' \
+            -configuration Debug \
+            -resultBundlePath TestResults.xcresult \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Upload xcresult on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults.xcresult
+          path: TestResults.xcresult
+          if-no-files-found: ignore

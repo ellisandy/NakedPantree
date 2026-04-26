@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#
+# Pre-commit hook: run swift-format and swiftlint on staged Swift files.
+# Install with `scripts/install-hooks.sh`.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Pull staged Swift files (added, copied, modified, renamed).
+mapfile -t STAGED < <(git diff --cached --name-only --diff-filter=ACMR \
+    | grep -E '\.swift$' \
+    || true)
+
+if [ "${#STAGED[@]}" -eq 0 ]; then
+    exit 0
+fi
+
+missing=()
+command -v swift-format >/dev/null 2>&1 || missing+=("swift-format")
+command -v swiftlint    >/dev/null 2>&1 || missing+=("swiftlint")
+
+if [ "${#missing[@]}" -gt 0 ]; then
+    echo "pre-commit: missing tools: ${missing[*]}" >&2
+    echo "pre-commit: install via Homebrew (\`brew install ${missing[*]}\`) and retry." >&2
+    exit 1
+fi
+
+echo "pre-commit: swift-format lint (${#STAGED[@]} file(s))..."
+swift-format lint --strict "${STAGED[@]}"
+
+echo "pre-commit: swiftlint (${#STAGED[@]} file(s))..."
+swiftlint lint --strict --quiet "${STAGED[@]}"
+
+echo "pre-commit: ok"
