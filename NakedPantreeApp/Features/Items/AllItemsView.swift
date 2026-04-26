@@ -30,9 +30,26 @@ struct AllItemsView: View {
         }
         .navigationTitle("All Items")
         .searchable(text: $query, prompt: "Search items")
-        .task(id: remoteChangeMonitor.changeToken) { await reload() }
-        .onChange(of: query) { _, _ in
-            Task { await reload() }
+        // Shell (household + locations) only refetches when CloudKit
+        // imports a remote change — typing in the search bar shouldn't
+        // re-hit those rows.
+        .task(id: remoteChangeMonitor.changeToken) {
+            await loadShell()
+        }
+        // Items refetch on query change, debounced so a flurry of
+        // keystrokes resolves into one Core Data hop instead of one
+        // per character. `.task(id:)` cancels the previous task when
+        // `query` changes, and `Task.sleep` throws on cancel — so only
+        // the last keystroke after a 250ms pause actually fetches.
+        .task(id: query) {
+            do {
+                if !query.isEmpty {
+                    try await Task.sleep(for: .milliseconds(250))
+                }
+                await loadItems()
+            } catch {
+                // Cancelled — the next .task takes over.
+            }
         }
     }
 
@@ -50,18 +67,32 @@ struct AllItemsView: View {
         }
     }
 
-    private func reload() async {
+    /// Fetch the household + locations once on appear and on each remote
+    /// change. Triggers an items load at the end so the initial render
+    /// shows data without waiting for the query-task to fire.
+    private func loadShell() async {
         do {
             let house = try await repositories.household.currentHousehold()
             householdID = house.id
             let locations = try await repositories.location.locations(in: house.id)
             locationsByID = Dictionary(uniqueKeysWithValues: locations.map { ($0.id, $0) })
+        } catch {
+            return
+        }
+        await loadItems()
+    }
 
-            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Fetch items for the current `query`. Bails if the shell hasn't
+    /// resolved a household yet — `loadShell()` calls back into this
+    /// once it has, so the empty state never sticks.
+    private func loadItems() async {
+        guard let house = householdID else { return }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
             if trimmed.isEmpty {
-                items = try await repositories.item.allItems(in: house.id)
+                items = try await repositories.item.allItems(in: house)
             } else {
-                items = try await repositories.item.search(trimmed, in: house.id)
+                items = try await repositories.item.search(trimmed, in: house)
             }
         } catch {
             items = []
