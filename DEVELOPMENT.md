@@ -119,15 +119,21 @@ The pre-commit hook (installed via `scripts/install-hooks.sh`) runs both
 on staged Swift files. To run them manually:
 
 ```bash
-swift-format lint --recursive --strict --parallel .
+swift-format lint --recursive --strict .   # note: no --parallel locally
 swiftlint lint --strict
 ```
 
-> ⚠️ The `--strict` flag is **required** to match CI. Without it
-> `swift-format lint` exits 0 even on `[LineLength]` and similar
-> warnings — meaning a plain local lint can pass while the
-> `.github/workflows/lint.yml` job fails on the same code. If you're
-> running these in a script, copy the flags exactly.
+> ⚠️ Two flags matter:
+>
+> - **`--strict`** is required. Without it `swift-format lint` exits 0
+>   even on `[LineLength]` and similar warnings, so a plain local lint
+>   can pass while CI fails.
+> - **Drop `--parallel` locally** even though
+>   `.github/workflows/lint.yml` uses it. The Xcode-bundled
+>   `swift-format` (601.x / 602.x) can suppress per-file violations
+>   under `--parallel`; CI runs the `swift:6.0` container's binary,
+>   where the same flag is reliable. Serial local runs are the closer
+>   match.
 
 To auto-format the whole tree:
 
@@ -164,9 +170,9 @@ Before requesting review:
       string the PR adds or edits.
 - [ ] Unit tests added or updated for any new logic in
       `NakedPantreeDomain`, `NakedPantreePersistence`, or app view models.
-- [ ] `swift-format lint --recursive --strict --parallel .` and
-      `swiftlint lint --strict` exit clean. Plain `swift-format lint`
-      without `--strict` exits 0 on warnings — match CI exactly.
+- [ ] `swift-format lint --recursive --strict .` (no `--parallel`
+      locally — see §3) and `swiftlint lint --strict` exit clean.
+      Plain `swift-format lint` without `--strict` exits 0 on warnings.
 - [ ] Full test suite passes the way CI runs it — *not* with
       `-only-testing`. `xcodebuild test ... -skip-testing:NakedPantreeUITests/SnapshotsUITests`
       catches UI smoke regressions a narrow filter would mask. See

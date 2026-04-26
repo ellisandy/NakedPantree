@@ -1,3 +1,4 @@
+import CoreData
 import Foundation
 import NakedPantreeDomain
 import NakedPantreePersistence
@@ -6,6 +7,7 @@ import SwiftUI
 @main
 struct NakedPantreeApp: App {
     private let repositories: Repositories
+    private let remoteChangeMonitor: RemoteChangeMonitor
 
     init() {
         if SnapshotFixtures.isSnapshotMode {
@@ -13,18 +15,21 @@ struct NakedPantreeApp: App {
             // they need a deterministic, populated state and never want
             // a stray SQLite file from a previous run leaking through.
             repositories = SnapshotFixtures.makeSeededRepositories()
+            remoteChangeMonitor = RemoteChangeMonitor()
         } else if ProcessInfo.processInfo.environment["EMPTY_STORE"] == "1" {
             // UI-test escape hatch: empty in-memory repos that exercise
             // the real bootstrap flow without persisting anything to
             // disk. Used by `BootstrapUITests` to regression-test the
             // first-launch race.
             repositories = .makePreview()
+            remoteChangeMonitor = RemoteChangeMonitor()
         } else if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
             // Unit tests load us via BUNDLE_LOADER, but the simulator has
             // no iCloud account so `cloudKitContainer()` would fail to
             // load. Repository contract tests stand up their own
             // in-memory container — the host repos here are never read.
             repositories = .makePreview()
+            remoteChangeMonitor = RemoteChangeMonitor()
         } else {
             // Phase 2.1: production stack is CloudKit-mirrored. The shared
             // store is wired but unused until Phase 3 sharing lands.
@@ -35,6 +40,9 @@ struct NakedPantreeApp: App {
                 item: CoreDataItemRepository(container: container),
                 photo: CoreDataItemPhotoRepository(container: container)
             )
+            remoteChangeMonitor = RemoteChangeMonitor(
+                coordinator: container.persistentStoreCoordinator
+            )
         }
     }
 
@@ -42,6 +50,7 @@ struct NakedPantreeApp: App {
         WindowGroup {
             RootView()
                 .environment(\.repositories, repositories)
+                .environment(\.remoteChangeMonitor, remoteChangeMonitor)
         }
     }
 }
