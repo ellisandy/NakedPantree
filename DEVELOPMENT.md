@@ -116,24 +116,21 @@ Configs at the repo root:
 - `.swiftlint.yml` — lint rules.
 
 The pre-commit hook (installed via `scripts/install-hooks.sh`) runs both
-on staged Swift files. To run them manually:
+on staged Swift files. To run them manually before pushing:
 
 ```bash
-swift-format lint --recursive --strict .   # note: no --parallel locally
-swiftlint lint --strict
+./scripts/lint.sh
 ```
 
-> ⚠️ Two flags matter:
+> ⚠️ **Don't run `swift-format lint --recursive --strict .` directly.**
+> The Xcode-bundled `swift-format` (601.x / 602.x) has a real bug
+> where `--recursive` silently misses per-file violations that the
+> same binary catches when given the file directly. CI's `swift:6.0`
+> container has a different build that doesn't have this bug, so a
+> clean local recursive run can ship a PR that fails CI.
 >
-> - **`--strict`** is required. Without it `swift-format lint` exits 0
->   even on `[LineLength]` and similar warnings, so a plain local lint
->   can pass while CI fails.
-> - **Drop `--parallel` locally** even though
->   `.github/workflows/lint.yml` uses it. The Xcode-bundled
->   `swift-format` (601.x / 602.x) can suppress per-file violations
->   under `--parallel`; CI runs the `swift:6.0` container's binary,
->   where the same flag is reliable. Serial local runs are the closer
->   match.
+> `scripts/lint.sh` enumerates Swift files explicitly and lints each
+> one, sidestepping the broken `--recursive` code path. Use it.
 
 To auto-format the whole tree:
 
@@ -170,9 +167,10 @@ Before requesting review:
       string the PR adds or edits.
 - [ ] Unit tests added or updated for any new logic in
       `NakedPantreeDomain`, `NakedPantreePersistence`, or app view models.
-- [ ] `swift-format lint --recursive --strict .` (no `--parallel`
-      locally — see §3) and `swiftlint lint --strict` exit clean.
-      Plain `swift-format lint` without `--strict` exits 0 on warnings.
+- [ ] `./scripts/lint.sh` exits clean. Don't substitute
+      `swift-format lint --recursive .` — the Xcode-bundled binary's
+      `--recursive` mode silently misses violations that CI catches.
+      See §3.
 - [ ] Full test suite passes the way CI runs it — *not* with
       `-only-testing`. `xcodebuild test ... -skip-testing:NakedPantreeUITests/SnapshotsUITests`
       catches UI smoke regressions a narrow filter would mask. See

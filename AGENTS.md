@@ -186,13 +186,13 @@ A short list of traps that have already cost time:
   explicit user permission. Fix the hook or the code.
 - **Assuming worktrees just work.** They don't, in every environment —
   re-read §3.
-- **Running `swift-format lint` with `--parallel` *or* without
-  `--strict`.** Both hide CI failures locally. Plain `swift-format
-  lint` exits 0 on warnings (`[LineLength]`, `[OrderedImports]`); the
-  Xcode-bundled binary under `--parallel` can also suppress per-file
-  violations that CI's `swift:6.0` container reports. Run
-  `swift-format lint --recursive --strict .` (no `--parallel`) before
-  pushing. See `DEVELOPMENT.md` §3.
+- **Running `swift-format lint --recursive` locally.** The
+  Xcode-bundled binary's `--recursive` mode silently misses per-file
+  `[LineLength]` (and similar) violations that CI's `swift:6.0`
+  container catches. A clean local recursive run is **not evidence
+  that CI will pass** — this has shipped failed-CI lint three times.
+  Run **`./scripts/lint.sh`** instead, which enumerates files
+  explicitly and sidesteps the broken code path. See `DEVELOPMENT.md` §3.
 
 ---
 

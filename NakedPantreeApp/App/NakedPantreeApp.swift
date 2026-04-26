@@ -10,6 +10,7 @@ struct NakedPantreeApp: App {
     private let repositories: Repositories
     private let remoteChangeMonitor: RemoteChangeMonitor
     private let accountStatusMonitor: AccountStatusMonitor
+    private let householdSharing: CloudHouseholdSharingService?
 
     init() {
         if SnapshotFixtures.isSnapshotMode {
@@ -19,6 +20,7 @@ struct NakedPantreeApp: App {
             repositories = SnapshotFixtures.makeSeededRepositories()
             remoteChangeMonitor = RemoteChangeMonitor()
             accountStatusMonitor = AccountStatusMonitor()
+            householdSharing = nil
         } else if ProcessInfo.processInfo.environment["EMPTY_STORE"] == "1" {
             // UI-test escape hatch: empty in-memory repos that exercise
             // the real bootstrap flow without persisting anything to
@@ -27,6 +29,7 @@ struct NakedPantreeApp: App {
             repositories = .makePreview()
             remoteChangeMonitor = RemoteChangeMonitor()
             accountStatusMonitor = AccountStatusMonitor()
+            householdSharing = nil
         } else if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
             // Unit tests load us via BUNDLE_LOADER, but the simulator has
             // no iCloud account so `cloudKitContainer()` would fail to
@@ -35,10 +38,14 @@ struct NakedPantreeApp: App {
             repositories = .makePreview()
             remoteChangeMonitor = RemoteChangeMonitor()
             accountStatusMonitor = AccountStatusMonitor()
+            householdSharing = nil
         } else {
-            // Phase 2.1: production stack is CloudKit-mirrored. The shared
-            // store is wired but unused until Phase 3 sharing lands.
+            // Phase 2.1: production stack is CloudKit-mirrored. Phase 3
+            // adds the sharing service against the same container.
             let container = CoreDataStack.cloudKitContainer()
+            let cloudKitContainer = CKContainer(
+                identifier: CoreDataStack.cloudKitContainerIdentifier
+            )
             repositories = Repositories(
                 household: CoreDataHouseholdRepository(container: container),
                 location: CoreDataLocationRepository(container: container),
@@ -48,8 +55,10 @@ struct NakedPantreeApp: App {
             remoteChangeMonitor = RemoteChangeMonitor(
                 coordinator: container.persistentStoreCoordinator
             )
-            accountStatusMonitor = AccountStatusMonitor(
-                container: CKContainer(identifier: CoreDataStack.cloudKitContainerIdentifier)
+            accountStatusMonitor = AccountStatusMonitor(container: cloudKitContainer)
+            householdSharing = CloudHouseholdSharingService(
+                container: container,
+                cloudKitContainer: cloudKitContainer
             )
         }
     }
@@ -60,6 +69,7 @@ struct NakedPantreeApp: App {
                 .environment(\.repositories, repositories)
                 .environment(\.remoteChangeMonitor, remoteChangeMonitor)
                 .environment(\.accountStatusMonitor, accountStatusMonitor)
+                .environment(\.householdSharing, householdSharing)
         }
     }
 }
