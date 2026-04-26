@@ -12,7 +12,7 @@ public final class CoreDataLocationRepository: LocationRepository, @unchecked Se
     }
 
     public func locations(in householdID: Household.ID) async throws -> [Location] {
-        try await container.performBackgroundTask { context in
+        try await container.performBackgroundTaskWithDefaults { context in
             let request = NSFetchRequest<NSManagedObject>(entityName: "LocationEntity")
             request.predicate = NSPredicate(format: "household.id == %@", householdID as CVarArg)
             request.sortDescriptors = [
@@ -24,13 +24,13 @@ public final class CoreDataLocationRepository: LocationRepository, @unchecked Se
     }
 
     public func location(id: Location.ID) async throws -> Location? {
-        try await container.performBackgroundTask { context in
+        try await container.performBackgroundTaskWithDefaults { context in
             try Self.fetchLocationRow(id: id, in: context).map(Self.makeLocation)
         }
     }
 
     public func create(_ location: Location) async throws {
-        try await container.performBackgroundTask { [container] context in
+        try await container.performBackgroundTaskWithDefaults { [container] context in
             let row = NSEntityDescription.insertNewObject(
                 forEntityName: "LocationEntity",
                 into: context
@@ -45,7 +45,7 @@ public final class CoreDataLocationRepository: LocationRepository, @unchecked Se
     }
 
     public func update(_ location: Location) async throws {
-        try await container.performBackgroundTask { [container] context in
+        try await container.performBackgroundTaskWithDefaults { [container] context in
             let row: NSManagedObject
             if let existing = try Self.fetchLocationRow(id: location.id, in: context) {
                 row = existing
@@ -65,7 +65,7 @@ public final class CoreDataLocationRepository: LocationRepository, @unchecked Se
     }
 
     public func delete(id: Location.ID) async throws {
-        try await container.performBackgroundTask { context in
+        try await container.performBackgroundTaskWithDefaults { context in
             guard let row = try Self.fetchLocationRow(id: id, in: context) else { return }
             context.delete(row)
             try context.save()

@@ -18,7 +18,7 @@ public final class CoreDataHouseholdRepository: HouseholdRepository, @unchecked 
     }
 
     public func currentHousehold() async throws -> Household {
-        try await container.performBackgroundTask { [container] context in
+        try await container.performBackgroundTaskWithDefaults { [container] context in
             if let existing = try Self.fetchHouseholdRow(in: context) {
                 return Self.makeHousehold(from: existing)
             }
@@ -39,7 +39,7 @@ public final class CoreDataHouseholdRepository: HouseholdRepository, @unchecked 
     }
 
     public func update(_ household: Household) async throws {
-        try await container.performBackgroundTask { [container] context in
+        try await container.performBackgroundTaskWithDefaults { [container] context in
             let row: NSManagedObject
             if let existing = try Self.fetchHouseholdRow(id: household.id, in: context) {
                 row = existing

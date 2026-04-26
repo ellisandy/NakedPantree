@@ -46,9 +46,7 @@ public enum CoreDataStack {
         if let loadError {
             fatalError("Persistent store failed to load: \(loadError)")
         }
-        container.viewContext.mergePolicy = NSMergePolicy(
-            merge: .mergeByPropertyObjectTrumpMergePolicyType
-        )
+        container.viewContext.mergePolicy = defaultMergePolicy
         return container
     }
 
@@ -96,9 +94,7 @@ public enum CoreDataStack {
             fatalError("CloudKit persistent stores failed to load: \(loadError)")
         }
 
-        container.viewContext.mergePolicy = NSMergePolicy(
-            merge: .mergeByPropertyObjectTrumpMergePolicyType
-        )
+        container.viewContext.mergePolicy = defaultMergePolicy
         container.viewContext.automaticallyMergesChangesFromParent = true
 
         return container
@@ -128,10 +124,14 @@ public enum CoreDataStack {
         if let loadError {
             fatalError("In-memory store failed to load: \(loadError)")
         }
-        container.viewContext.mergePolicy = NSMergePolicy(
-            merge: .mergeByPropertyObjectTrumpMergePolicyType
-        )
+        container.viewContext.mergePolicy = defaultMergePolicy
         return container
+    }
+
+    /// Project-standard merge policy. Last write wins, per attribute. See
+    /// `ARCHITECTURE.md` §5 conflict resolution for the rationale.
+    public static var defaultMergePolicy: NSMergePolicy {
+        NSMergePolicy(merge: .mergeByPropertyObjectTrumpMergePolicyType)
     }
 
     private static func makeDescription(
