@@ -22,19 +22,23 @@ struct RootView: View {
     @State private var selectedItemID: Item.ID?
     @State private var bootstrapComplete = false
     @Environment(\.repositories) private var repositories
+    @Environment(\.accountStatusMonitor) private var accountStatusMonitor
 
     var body: some View {
         Group {
             if bootstrapComplete {
-                NavigationSplitView {
-                    SidebarView(selection: $sidebarSelection)
-                } content: {
-                    ItemsView(
-                        selection: sidebarSelection,
-                        selectedItemID: $selectedItemID
-                    )
-                } detail: {
-                    ItemDetailView(itemID: selectedItemID)
+                VStack(spacing: 0) {
+                    AccountStatusBanner(status: accountStatusMonitor.status)
+                    NavigationSplitView {
+                        SidebarView(selection: $sidebarSelection)
+                    } content: {
+                        ItemsView(
+                            selection: sidebarSelection,
+                            selectedItemID: $selectedItemID
+                        )
+                    } detail: {
+                        ItemDetailView(itemID: selectedItemID)
+                    }
                 }
             } else {
                 Color.brandWarmCream

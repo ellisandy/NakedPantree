@@ -1,3 +1,4 @@
+import CloudKit
 import CoreData
 import Foundation
 import NakedPantreeDomain
@@ -8,6 +9,7 @@ import SwiftUI
 struct NakedPantreeApp: App {
     private let repositories: Repositories
     private let remoteChangeMonitor: RemoteChangeMonitor
+    private let accountStatusMonitor: AccountStatusMonitor
 
     init() {
         if SnapshotFixtures.isSnapshotMode {
@@ -16,6 +18,7 @@ struct NakedPantreeApp: App {
             // a stray SQLite file from a previous run leaking through.
             repositories = SnapshotFixtures.makeSeededRepositories()
             remoteChangeMonitor = RemoteChangeMonitor()
+            accountStatusMonitor = AccountStatusMonitor()
         } else if ProcessInfo.processInfo.environment["EMPTY_STORE"] == "1" {
             // UI-test escape hatch: empty in-memory repos that exercise
             // the real bootstrap flow without persisting anything to
@@ -23,6 +26,7 @@ struct NakedPantreeApp: App {
             // first-launch race.
             repositories = .makePreview()
             remoteChangeMonitor = RemoteChangeMonitor()
+            accountStatusMonitor = AccountStatusMonitor()
         } else if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
             // Unit tests load us via BUNDLE_LOADER, but the simulator has
             // no iCloud account so `cloudKitContainer()` would fail to
@@ -30,6 +34,7 @@ struct NakedPantreeApp: App {
             // in-memory container — the host repos here are never read.
             repositories = .makePreview()
             remoteChangeMonitor = RemoteChangeMonitor()
+            accountStatusMonitor = AccountStatusMonitor()
         } else {
             // Phase 2.1: production stack is CloudKit-mirrored. The shared
             // store is wired but unused until Phase 3 sharing lands.
@@ -43,6 +48,9 @@ struct NakedPantreeApp: App {
             remoteChangeMonitor = RemoteChangeMonitor(
                 coordinator: container.persistentStoreCoordinator
             )
+            accountStatusMonitor = AccountStatusMonitor(
+                container: CKContainer(identifier: CoreDataStack.cloudKitContainerIdentifier)
+            )
         }
     }
 
@@ -51,6 +59,7 @@ struct NakedPantreeApp: App {
             RootView()
                 .environment(\.repositories, repositories)
                 .environment(\.remoteChangeMonitor, remoteChangeMonitor)
+                .environment(\.accountStatusMonitor, accountStatusMonitor)
         }
     }
 }
