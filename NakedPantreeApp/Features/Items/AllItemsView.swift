@@ -9,6 +9,7 @@ struct AllItemsView: View {
     @Binding var selectedItemID: Item.ID?
 
     @Environment(\.repositories) private var repositories
+    @Environment(\.remoteChangeMonitor) private var remoteChangeMonitor
     @State private var query: String = ""
     @State private var items: [Item] = []
     @State private var householdID: Household.ID?
@@ -29,7 +30,7 @@ struct AllItemsView: View {
         }
         .navigationTitle("All Items")
         .searchable(text: $query, prompt: "Search items")
-        .task { await reload() }
+        .task(id: remoteChangeMonitor.changeToken) { await reload() }
         .onChange(of: query) { _, _ in
             Task { await reload() }
         }

@@ -6,6 +6,7 @@ import SwiftUI
 struct SidebarView: View {
     @Binding var selection: SidebarSelection?
     @Environment(\.repositories) private var repositories
+    @Environment(\.remoteChangeMonitor) private var remoteChangeMonitor
 
     @State private var locations: [Location] = []
     @State private var householdID: Household.ID?
@@ -83,7 +84,7 @@ struct SidebarView: View {
         } message: { _ in
             Text("This also removes every item inside it.")
         }
-        .task { await reload() }
+        .task(id: remoteChangeMonitor.changeToken) { await reload() }
     }
 
     private var deleteConfirmationTitle: String {

@@ -9,6 +9,7 @@ struct ItemsView: View {
     @Binding var selectedItemID: Item.ID?
 
     @Environment(\.repositories) private var repositories
+    @Environment(\.remoteChangeMonitor) private var remoteChangeMonitor
     @State private var items: [Item] = []
     @State private var locationName: String?
     @State private var formMode: ItemFormView.Mode?
@@ -107,7 +108,11 @@ struct ItemsView: View {
                 systemImage: "tray",
                 description: Text("Tap + to add the first one.")
             )
-            .task(id: id) { await reload(locationID: id) }
+            .task(
+                id: ReloadKey(scope: id, token: remoteChangeMonitor.changeToken)
+            ) {
+                await reload(locationID: id)
+            }
         } else {
             List(selection: $selectedItemID) {
                 ForEach(items) { item in
@@ -128,7 +133,11 @@ struct ItemsView: View {
                         }
                 }
             }
-            .task(id: id) { await reload(locationID: id) }
+            .task(
+                id: ReloadKey(scope: id, token: remoteChangeMonitor.changeToken)
+            ) {
+                await reload(locationID: id)
+            }
         }
     }
 

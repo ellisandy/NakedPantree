@@ -6,6 +6,7 @@ struct ItemDetailView: View {
     let itemID: Item.ID?
 
     @Environment(\.repositories) private var repositories
+    @Environment(\.remoteChangeMonitor) private var remoteChangeMonitor
     @State private var item: Item?
     @State private var formMode: ItemFormView.Mode?
 
@@ -38,7 +39,7 @@ struct ItemDetailView: View {
                 Task { await reload() }
             }
         }
-        .task(id: itemID) {
+        .task(id: ReloadKey(scope: itemID, token: remoteChangeMonitor.changeToken)) {
             await reload()
         }
     }
