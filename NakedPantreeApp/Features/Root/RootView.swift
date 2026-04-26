@@ -7,6 +7,7 @@ import SwiftUI
 struct RootView: View {
     @State private var sidebarSelection: SidebarSelection? = .smartList(.allItems)
     @State private var selectedItemID: Item.ID?
+    @Environment(\.repositories) private var repositories
 
     var body: some View {
         NavigationSplitView {
@@ -19,6 +20,16 @@ struct RootView: View {
         } detail: {
             ItemDetailView(itemID: selectedItemID)
         }
+        .task {
+            // First-launch bootstrap per ARCHITECTURE.md §6: ensure the
+            // user lands in a household with at least one location. The
+            // service is idempotent — no-op on every subsequent launch.
+            let bootstrap = BootstrapService(
+                household: repositories.household,
+                location: repositories.location
+            )
+            try? await bootstrap.bootstrapIfNeeded()
+        }
     }
 }
 
@@ -30,10 +41,10 @@ enum SidebarSelection: Hashable, Sendable {
     case location(Location.ID)
 }
 
-/// Sidebar Smart Lists. Only the structure lands in Phase 1.3; the
-/// actual computed projections (`expiresAt` within 7 days,
-/// recency, cross-location list) arrive with the Smart Lists feature in
-/// Phase 6. Until then, selecting one shows an empty state.
+/// Sidebar Smart Lists. `All Items` is wired up in Phase 1.5 (cross-
+/// location list with search). The other projections (`expiresAt` within
+/// 7 days, recently-added) arrive with the Smart Lists feature in
+/// Phase 6 — selecting one of those shows a placeholder until then.
 enum SmartList: String, CaseIterable, Identifiable, Sendable {
     case expiringSoon
     case allItems

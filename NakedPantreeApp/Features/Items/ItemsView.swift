@@ -85,11 +85,18 @@ struct ItemsView: View {
 
     @ViewBuilder
     private func smartListContent(_ list: SmartList) -> some View {
-        ContentUnavailableView(
-            list.title,
-            systemImage: list.systemImage,
-            description: Text("Coming with Smart Lists.")
-        )
+        switch list {
+        case .allItems:
+            AllItemsView(selectedItemID: $selectedItemID)
+        case .expiringSoon, .recentlyAdded:
+            // Projections (Expiring Soon, Recently Added) land with the
+            // Smart Lists feature in Phase 6.
+            ContentUnavailableView(
+                list.title,
+                systemImage: list.systemImage,
+                description: Text("Coming with Smart Lists.")
+            )
+        }
     }
 
     @ViewBuilder

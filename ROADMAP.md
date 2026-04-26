@@ -62,9 +62,9 @@ Every later phase assumes this skeleton exists.
 
 ---
 
-## Phase 1 — Single-user MVP (local only) 🟡
+## Phase 1 — Single-user MVP (local only) ✅
 
-**Status:** In progress — see sub-milestones below.
+**Status:** Complete (see sub-milestones below).
 
 **Goal:** a usable inventory app on one device. No iCloud yet.
 
@@ -89,11 +89,11 @@ Every later phase assumes this skeleton exists.
 
 **Exit criteria**
 
-- [ ] App launches to the default household with one location.
+- [x] App launches to the default household with one location.
 - [x] User can add, rename, and delete locations and items with no
       crashes and no console warnings.
-- [ ] Search returns results across all locations.
-- [ ] Every user-facing string passes the `DESIGN_GUIDELINES.md` §10
+- [x] Search returns results across all locations.
+- [x] Every user-facing string passes the `DESIGN_GUIDELINES.md` §10
       checklist.
 - [x] Repository protocol tests pass with both the Core Data
       implementation and an in-memory mock.
@@ -109,7 +109,7 @@ The phase is large enough to land in chunks. Each row tracks one PR.
 | 1.2b | `Item` and `ItemPhoto` repos + cascade-delete tests | ✅ Merged ([apps#13](https://github.com/ellisandy/NakedPantree/pull/13)) |
 | 1.3 | `NavigationSplitView` shell (sidebar / content / detail) | ✅ Merged ([apps#14](https://github.com/ellisandy/NakedPantree/pull/14)) |
 | 1.4 | CRUD wiring for `Location`s and `Item`s | ✅ Merged ([apps#15](https://github.com/ellisandy/NakedPantree/pull/15)) |
-| 1.5 | Search across locations + first-launch bootstrap | ⬜ Next |
+| 1.5 | Search across locations + first-launch bootstrap | ✅ Merged ([apps#17](https://github.com/ellisandy/NakedPantree/pull/17)) |
 
 > The split is not load-bearing — it's a guide. If a piece of work
 > doesn't fit cleanly, retitle a row or add one. Don't force scope into
@@ -117,7 +117,9 @@ The phase is large enough to land in chunks. Each row tracks one PR.
 
 ---
 
-## Phase 2 — CloudKit sync (private database only)
+## Phase 2 — CloudKit sync (private database only) ▶
+
+**Status:** Up next.
 
 **Goal:** two devices on the same iCloud account stay in sync.
 

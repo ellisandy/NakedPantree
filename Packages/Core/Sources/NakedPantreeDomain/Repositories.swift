@@ -31,6 +31,10 @@ public protocol LocationRepository: Sendable {
 public protocol ItemRepository: Sendable {
     func items(in locationID: Location.ID) async throws -> [Item]
     func item(id: Item.ID) async throws -> Item?
+    /// Every item across every location in the household, sorted by
+    /// name. Backs the `All Items` smart list and is the empty-query
+    /// fallback for `search(_:in:)`.
+    func allItems(in householdID: Household.ID) async throws -> [Item]
     /// Case-insensitive substring match on `Item.name`, scoped to one
     /// household. Empty / whitespace-only queries return an empty array.
     func search(_ query: String, in householdID: Household.ID) async throws -> [Item]

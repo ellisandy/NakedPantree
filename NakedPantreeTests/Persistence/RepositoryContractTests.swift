@@ -364,6 +364,51 @@ struct ItemRepositoryContractTests {
         let unknown = try await itemRepo.item(id: UUID())
         #expect(unknown == nil)
     }
+
+    @Test(
+        "allItems(in:) returns every item across every location, sorted by name",
+        arguments: RepositoryFactory.all)
+    func allItemsInHousehold(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let itemRepo = bundle.item
+
+        let house = try await household.currentHousehold()
+        let pantry = Location(householdID: house.id, name: "Kitchen")
+        let freezer = Location(householdID: house.id, name: "Garage Freezer", kind: .freezer)
+        try await locationRepo.create(pantry)
+        try await locationRepo.create(freezer)
+
+        try await itemRepo.create(Item(locationID: pantry.id, name: "Tomatoes"))
+        try await itemRepo.create(Item(locationID: freezer.id, name: "Ice Cream"))
+        try await itemRepo.create(Item(locationID: pantry.id, name: "Bread"))
+
+        let all = try await itemRepo.allItems(in: house.id)
+        #expect(all.map(\.name) == ["Bread", "Ice Cream", "Tomatoes"])
+    }
+
+    @Test(
+        "allItems(in:) is scoped — items in other households are filtered out",
+        arguments: RepositoryFactory.all)
+    func allItemsScopedByHousehold(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let itemRepo = bundle.item
+
+        let mine = try await household.currentHousehold()
+        let elsewhere = Household(name: "Mom's Pantry")
+        let myKitchen = Location(householdID: mine.id, name: "Kitchen")
+        let momsKitchen = Location(householdID: elsewhere.id, name: "Mom's Kitchen")
+        try await locationRepo.create(myKitchen)
+        try await locationRepo.create(momsKitchen)
+        try await itemRepo.create(Item(locationID: myKitchen.id, name: "My Bread"))
+        try await itemRepo.create(Item(locationID: momsKitchen.id, name: "Mom's Bread"))
+
+        let all = try await itemRepo.allItems(in: mine.id)
+        #expect(all.map(\.name) == ["My Bread"])
+    }
 }
 
 @Suite("ItemPhotoRepository contract")
