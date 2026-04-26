@@ -112,6 +112,18 @@ public enum CoreDataStack {
         }
     }
 
+    /// Returns the shared CloudKit-backed store on a multi-store container,
+    /// or `nil` for single-store containers. `acceptShareInvitations`
+    /// from `CloudShareAcceptance` lands shared records here when a
+    /// recipient accepts an invite.
+    public static func sharedCloudKitStore(
+        in container: NSPersistentContainer
+    ) -> NSPersistentStore? {
+        container.persistentStoreCoordinator.persistentStores.first { store in
+            store.url?.lastPathComponent.contains("-shared.sqlite") == true
+        }
+    }
+
     /// Creates an in-memory container — the SQLite store is bound to
     /// `/dev/null`, so nothing reaches disk. Used for tests and SwiftUI
     /// previews. Each call returns a fresh container with an empty store.

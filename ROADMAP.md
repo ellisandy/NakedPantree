@@ -194,8 +194,8 @@ household.
 
 | # | Title | Status |
 | --- | --- | --- |
-| 3.1 | `CKShare` creation + `UICloudSharingController` bridge + Share Household button | 🟡 In review |
-| 3.2 | Share-acceptance handler (`UIApplicationDelegateAdaptor`) | ⏳ Queued |
+| 3.1 | `CKShare` creation + `UICloudSharingController` bridge + Share Household button | ✅ Merged ([apps#32](https://github.com/ellisandy/NakedPantree/pull/32)) |
+| 3.2 | Share-acceptance handler (`UIApplicationDelegateAdaptor`) | 🟡 In review |
 | 3.3 | Cross-store write routing (private vs shared on insert) + verification runbook | ⏳ Queued |
 
 ---

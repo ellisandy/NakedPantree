@@ -7,6 +7,8 @@ import SwiftUI
 
 @main
 struct NakedPantreeApp: App {
+    @UIApplicationDelegateAdaptor(NakedPantreeAppDelegate.self) private var appDelegate
+
     private let repositories: Repositories
     private let remoteChangeMonitor: RemoteChangeMonitor
     private let accountStatusMonitor: AccountStatusMonitor
@@ -60,6 +62,12 @@ struct NakedPantreeApp: App {
                 container: container,
                 cloudKitContainer: cloudKitContainer
             )
+            // Phase 3.2: hand the share-acceptance service to the
+            // delegate so `application(_:userDidAcceptCloudKitShareWith:)`
+            // can import shared records when a recipient taps an
+            // invite. The delegate is instantiated by the system before
+            // this init runs, so a static var is the simplest seam.
+            NakedPantreeAppDelegate.shareAcceptance = CloudShareAcceptance(container: container)
         }
     }
 
