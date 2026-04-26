@@ -27,8 +27,7 @@ targets:
     type: application
     platform: iOS
     supportedDestinations:
-      - iPhone
-      - iPad
+      - iOS
       - macDesignedForIPad
     sources:
       - path: NakedPantreeApp
@@ -41,14 +40,6 @@ targets:
         product: NakedPantreeDomain
       - package: Core
         product: NakedPantreePersistence
-    info:
-      path: NakedPantreeApp/Resources/Info.plist
-      properties:
-        UILaunchScreen:
-          UIColorName: ""
-          UIImageName: ""
-        CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ellisandy.NakedPantree
@@ -61,6 +52,7 @@ targets:
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: YES
         CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: NakedPantreeApp/Resources/Info.plist
 
   NakedPantreeTests:
     type: bundle.unit-test
