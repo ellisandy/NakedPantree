@@ -8,9 +8,9 @@ Cursor, Copilot Workspace, etc.) working on Naked Pantree. Humans, see
 `DEVELOPMENT.md`. Architecture, see `ARCHITECTURE.md`. Brand voice and
 copy rules, see `DESIGN_GUIDELINES.md`.
 
-> **Status:** stub. Expanded as conventions get exercised on real PRs.
-> Sections marked **TBD** will fill in alongside the first code that needs
-> them.
+> **Status:** the rules and conventions that don't depend on real code are
+> filled in. Sections that wait for the project to exist carry explicit
+> `TODO` markers.
 
 ---
 
@@ -20,7 +20,8 @@ copy rules, see `DESIGN_GUIDELINES.md`.
    that contradict it without flagging them as a deviation.
 2. `DESIGN_GUIDELINES.md` — voice, copy, color, logo. Every user-facing
    string passes the §10 checklist.
-3. This file — local conventions and traps.
+3. `DEVELOPMENT.md` — local setup, branch policy, pre-merge checklist.
+4. This file — local conventions and traps.
 
 ---
 
@@ -46,10 +47,59 @@ and ask the user first.
   re-read §3 and §9 of `DESIGN_GUIDELINES.md`.
 - **Don't add a backend.** v1.0 is iCloud-only. If you find yourself
   reaching for a server, you're solving the wrong problem.
+- **Use a git worktree for every task** — see §3 below. Do not switch
+  branches in the main checkout while another task is in flight.
 
 ---
 
-## 3. Conventions
+## 3. Use a git worktree for every task
+
+This repo expects parallel work. Multiple agents (or one agent across
+multiple sessions) regularly have independent branches in flight.
+Switching branches in the main checkout corrupts in-progress work and
+makes review history confusing. Worktrees fix this.
+
+### The rule
+
+- **Every new task starts with `git worktree add`.** Never `git checkout`
+  another branch in the main checkout to do new work.
+- **One worktree per branch.** Don't share worktrees across tasks.
+- **Clean up when done.** After the PR merges, remove the worktree.
+
+### How
+
+```bash
+# From the main checkout. Branch name follows DEVELOPMENT.md §4 conventions.
+git worktree add ../NakedPantree-<short-name> -b claude/<short-name>
+
+# Work inside it.
+cd ../NakedPantree-<short-name>
+# ... make commits, push, open PR ...
+
+# After the PR merges:
+cd /home/user/NakedPantree   # or wherever the main checkout lives
+git worktree remove ../NakedPantree-<short-name>
+git branch -d claude/<short-name>
+```
+
+### When using the Claude Code `Agent` tool
+
+The `Agent` tool accepts an `isolation: "worktree"` parameter that
+creates and cleans up a worktree automatically. Prefer that to manual
+`git worktree add` when delegating a self-contained task to a sub-agent.
+The agent's branch and final path come back in the result if any commits
+were made; the worktree is auto-removed if no changes were made.
+
+### When *not* to use a worktree
+
+- One-line edits the user is watching live (e.g. fixing a typo they just
+  pointed out). Switching to a worktree adds friction with no benefit.
+- Pure read-only investigation. Read what you need from the main
+  checkout — no branch involved.
+
+---
+
+## 4. Conventions
 
 ### File layout
 
@@ -59,8 +109,12 @@ under `Packages/Core/Sources/NakedPantreeDomain/Repositories/`.
 
 ### Naming
 
-**TBD** — concrete naming conventions (view suffix, view-model suffix,
-repository naming) will be locked in alongside the first feature PR.
+> **TODO (first feature PR):** lock in the suffix conventions
+> (`*View`, `*ViewModel`, `*Repository`, `*Service`) once the first real
+> feature lands and we can point at concrete examples.
+
+Until then: prefer Apple's own SwiftUI sample-app conventions and match
+whatever neighbors in the file use.
 
 ### Tests
 
@@ -70,15 +124,16 @@ repository naming) will be locked in alongside the first feature PR.
   tests.
 - UI tests are smoke-only; they exercise navigation, not business logic.
 
-### Commits
+### Commits and PRs
 
-- Commit messages explain *why*, not *what*. Imperative mood. One change
-  per commit when practical.
-- Never push to `main` directly. Open a PR; wait for Xcode Cloud green.
+Follow `DEVELOPMENT.md` §4. The pre-merge checklist there applies to
+agent-authored PRs too. In particular: update `ARCHITECTURE.md` in the
+same PR if the change touches the schema, an enum, or a repository
+protocol.
 
 ---
 
-## 4. Things that look fine but aren't
+## 5. Things that look fine but aren't
 
 A short list of traps that have already cost time:
 
@@ -90,14 +145,18 @@ A short list of traps that have already cost time:
   will reject it.
 - **Using SwiftData.** It still doesn't expose the CloudKit shared
   database on iOS 26. Sharing is the product. Don't.
-- **Reaching for `TabView` at the root.** Locations + Smart Lists *are*
+- **Reaching for `TabView` at the root.** Smart Lists + Locations *are*
   the navigation; see `ARCHITECTURE.md` §7.
 - **Putting humor in error messages, permission requests, billing, or
   legal text.** See `DESIGN_GUIDELINES.md` §9 — those are off-limits.
+- **`git checkout`-ing a different branch in the main checkout.** Use a
+  worktree. See §3.
+- **Skipping `--no-verify` discussions.** Don't use it without explicit
+  user permission, even if a hook is annoying. Fix the hook or the code.
 
 ---
 
-## 5. When you're stuck
+## 6. When you're stuck
 
 - If a change requires deviating from `ARCHITECTURE.md`, propose the
   deviation in the PR description and wait for sign-off rather than
@@ -107,3 +166,5 @@ A short list of traps that have already cost time:
   writing code.
 - If `DESIGN_GUIDELINES.md` and a UX choice seem to conflict, the
   guidelines win.
+- If `DEVELOPMENT.md` has a `TODO` blocking your task, fill it in as
+  part of your PR — don't work around it silently.
