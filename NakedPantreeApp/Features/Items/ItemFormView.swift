@@ -24,7 +24,7 @@ struct ItemFormView: View {
     @State private var quantity: Int32 = 1
     @State private var unit: NakedPantreeDomain.Unit = .count
     @State private var hasExpiry: Bool = false
-    @State private var expiresAt: Date = .now.addingTimeInterval(60 * 60 * 24 * 7)
+    @State private var expiresAt: Date = .now.addingTimeInterval(TimeInterval(60 * 60 * 24 * 7))
     @State private var notes: String = ""
     @State private var isSaving = false
     @State private var saveError: String?
@@ -196,7 +196,7 @@ extension NakedPantreeDomain.Unit {
                 name: "Sourdough",
                 quantity: 2,
                 unit: .count,
-                expiresAt: .now.addingTimeInterval(60 * 60 * 24 * 3),
+                expiresAt: .now.addingTimeInterval(TimeInterval(60 * 60 * 24 * 3)),
                 notes: "Last loaf in the freezer"
             )
         ),
