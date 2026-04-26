@@ -22,17 +22,34 @@ import SwiftUI
 /// an explicit reload, which means a local edit reloads twice — once
 /// optimistically, once via the token. The double-fire is idempotent
 /// and the second pass is cheap; filtering self vs remote properly
-/// needs persistent-history-token bookkeeping (Phase 2.4).
+/// needs persistent-history-token bookkeeping (issue #28).
+///
+/// **Debounce:** notifications fan out — CloudKit fires per-store on
+/// save (private + shared) and per-transaction on initial sync. A
+/// single user action can produce 5+ notifications across one frame,
+/// each previously bumping `changeToken` and triggering SwiftUI's
+/// "onChange tried to update multiple times per frame" warning plus
+/// a thundering herd of `.task(id:)` cancellations on app launch.
+/// We coalesce into one bump per ~120ms quiet window.
 @Observable
 @MainActor
 final class RemoteChangeMonitor {
     private(set) var changeToken = UUID()
 
     // `nonisolated(unsafe)` so `deinit` (which Swift treats as
-    // nonisolated) can cancel the task. The task only writes `task`
-    // once at init time and reads it once at deinit; no concurrent
-    // mutation.
+    // nonisolated) can cancel the task. The compiler nudges to drop
+    // the `(unsafe)` since `Task<Void, Never>` is Sendable, but the
+    // `@Observable` macro's generated backing storage rejects bare
+    // `nonisolated` on mutable stored properties — so we keep
+    // `(unsafe)` and live with the warning.
     nonisolated(unsafe) private var task: Task<Void, Never>?
+
+    /// Pending debounce timer. Each incoming notification cancels the
+    /// previous timer and starts a new one — only the last
+    /// notification followed by ~120ms of quiet actually bumps the
+    /// token. Stays on the main actor; no deinit cleanup needed since
+    /// the task self-terminates after the sleep.
+    private var debounceTask: Task<Void, Never>?
 
     /// No-op monitor for previews and tests. Never bumps `changeToken`.
     /// `nonisolated` so the `@Entry` environment default value (which
@@ -46,13 +63,26 @@ final class RemoteChangeMonitor {
         )
         task = Task { @MainActor [weak self] in
             for await _ in stream {
-                self?.changeToken = UUID()
+                self?.scheduleBump()
             }
         }
     }
 
     deinit {
         task?.cancel()
+    }
+
+    private func scheduleBump() {
+        debounceTask?.cancel()
+        debounceTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(120))
+                self?.changeToken = UUID()
+            } catch {
+                // Cancelled by a newer notification — that newer
+                // notification owns the next bump.
+            }
+        }
     }
 }
 

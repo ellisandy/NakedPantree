@@ -40,8 +40,38 @@ struct RemoteChangeMonitorTests {
         )
 
         // Give the observer a chance to be wrong; the token must not move.
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await Task.sleep(nanoseconds: 250_000_000)
         #expect(monitor.changeToken == initial)
+    }
+
+    @Test("A flurry of notifications coalesces into a single token bump")
+    func flurryCoalescesIntoSingleBump() async throws {
+        let container = CoreDataStack.inMemoryContainer()
+        let monitor = RemoteChangeMonitor(coordinator: container.persistentStoreCoordinator)
+        let initial = monitor.changeToken
+
+        // Fire five notifications back-to-back. Pre-debounce this would
+        // bump the token five times in the same frame and trip SwiftUI's
+        // "onChange tried to update multiple times per frame" warning.
+        for _ in 0..<5 {
+            NotificationCenter.default.post(
+                name: .NSPersistentStoreRemoteChange,
+                object: container.persistentStoreCoordinator
+            )
+        }
+
+        // Wait past the debounce window for the first bump to land.
+        try await waitFor(
+            condition: { monitor.changeToken != initial },
+            timeoutNanos: 1_000_000_000
+        )
+        let firstBump = monitor.changeToken
+        #expect(firstBump != initial)
+
+        // No further notifications — token must remain stable through
+        // another debounce window.
+        try await Task.sleep(nanoseconds: 250_000_000)
+        #expect(monitor.changeToken == firstBump)
     }
 
     @Test("No-op monitor never bumps")
@@ -54,7 +84,7 @@ struct RemoteChangeMonitorTests {
             object: nil
         )
 
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await Task.sleep(nanoseconds: 250_000_000)
         #expect(monitor.changeToken == initial)
     }
 
