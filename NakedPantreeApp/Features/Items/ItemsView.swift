@@ -1,9 +1,9 @@
 import NakedPantreeDomain
 import SwiftUI
 
-/// Content column. Lists items for the selected sidebar entry. Phase 1.3
-/// is read-only — create / edit / delete arrive in 1.4. Smart Lists are
-/// stubbed to an empty state until 1.5 / Phase 6.
+/// Content column. Lists items for the selected sidebar entry, with
+/// `+` to create and swipe-to-delete. Smart Lists are stubbed to an
+/// empty state until 1.5 / Phase 6.
 struct ItemsView: View {
     let selection: SidebarSelection?
     @Binding var selectedItemID: Item.ID?
@@ -11,6 +11,8 @@ struct ItemsView: View {
     @Environment(\.repositories) private var repositories
     @State private var items: [Item] = []
     @State private var locationName: String?
+    @State private var formMode: ItemFormView.Mode?
+    @State private var pendingDelete: Item?
 
     var body: some View {
         Group {
@@ -24,8 +26,36 @@ struct ItemsView: View {
             }
         }
         .navigationTitle(title)
-        .navigationDestination(for: Item.ID.self) { itemID in
-            ItemDetailView(itemID: itemID)
+        .toolbar {
+            if case .location(let locationID) = selection {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        formMode = .create(locationID: locationID)
+                    } label: {
+                        Label("New Item", systemImage: "plus")
+                    }
+                }
+            }
+        }
+        .sheet(item: $formMode) { mode in
+            ItemFormView(mode: mode) {
+                if case .location(let id) = selection {
+                    Task { await reload(locationID: id) }
+                }
+            }
+        }
+        .confirmationDialog(
+            deleteConfirmationTitle,
+            isPresented: deleteDialogBinding,
+            titleVisibility: .visible,
+            presenting: pendingDelete
+        ) { item in
+            Button("Delete", role: .destructive) {
+                Task { await delete(item) }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDelete = nil
+            }
         }
     }
 
@@ -37,11 +67,24 @@ struct ItemsView: View {
         }
     }
 
+    private var deleteConfirmationTitle: String {
+        if let pendingDelete {
+            return "Delete \(pendingDelete.name)?"
+        }
+        return ""
+    }
+
+    private var deleteDialogBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDelete != nil },
+            set: { newValue in
+                if !newValue { pendingDelete = nil }
+            }
+        )
+    }
+
     @ViewBuilder
     private func smartListContent(_ list: SmartList) -> some View {
-        // Smart-list projections (Expiring Soon, Recently Added) come in
-        // a later milestone; the All Items aggregate ships with search
-        // in 1.5. Until then, empty state is honest.
         ContentUnavailableView(
             list.title,
             systemImage: list.systemImage,
@@ -55,7 +98,7 @@ struct ItemsView: View {
             ContentUnavailableView(
                 "No items here yet",
                 systemImage: "tray",
-                description: Text("Items will land here once we wire up adding them.")
+                description: Text("Tap + to add the first one.")
             )
             .task(id: id) { await reload(locationID: id) }
         } else {
@@ -63,6 +106,19 @@ struct ItemsView: View {
                 ForEach(items) { item in
                     ItemRow(item: item)
                         .tag(item.id)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                pendingDelete = item
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            Button {
+                                formMode = .edit(item)
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(.indigo)
+                        }
                 }
             }
             .task(id: id) { await reload(locationID: id) }
@@ -81,6 +137,22 @@ struct ItemsView: View {
             items = try await repositories.item.items(in: locationID)
         } catch {
             items = []
+        }
+    }
+
+    private func delete(_ item: Item) async {
+        pendingDelete = nil
+        if selectedItemID == item.id { selectedItemID = nil }
+        do {
+            try await repositories.item.delete(id: item.id)
+            if case .location(let id) = selection {
+                await reload(locationID: id)
+            }
+        } catch {
+            // Soft fail — reload to drop stale optimistic state.
+            if case .location(let id) = selection {
+                await reload(locationID: id)
+            }
         }
     }
 }

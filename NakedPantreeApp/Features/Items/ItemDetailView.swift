@@ -1,12 +1,13 @@
 import NakedPantreeDomain
 import SwiftUI
 
-/// Detail column. Read-only in Phase 1.3 — editing arrives in 1.4.
+/// Detail column. Read-only by default; tap Edit to open the item form.
 struct ItemDetailView: View {
     let itemID: Item.ID?
 
     @Environment(\.repositories) private var repositories
     @State private var item: Item?
+    @State private var formMode: ItemFormView.Mode?
 
     var body: some View {
         Group {
@@ -23,6 +24,20 @@ struct ItemDetailView: View {
             }
         }
         .navigationTitle(item?.name ?? "")
+        .toolbar {
+            if let item {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Edit") {
+                        formMode = .edit(item)
+                    }
+                }
+            }
+        }
+        .sheet(item: $formMode) { mode in
+            ItemFormView(mode: mode) {
+                Task { await reload() }
+            }
+        }
         .task(id: itemID) {
             await reload()
         }
