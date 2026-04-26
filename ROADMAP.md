@@ -159,7 +159,9 @@ The phase is large enough to land in chunks. Each row tracks one PR.
 
 ---
 
-## Phase 3 — Sharing across households
+## Phase 3 — Sharing across households 🟡
+
+**Status:** In progress.
 
 **Goal:** two different iCloud accounts can collaborate on one
 household.
@@ -187,6 +189,14 @@ household.
       same household after share acceptance.
 - [ ] Removing a participant removes their access on the next launch.
 - [ ] Manual checklist (`ARCHITECTURE.md` §11) entries 1–3 all pass.
+
+**Sub-milestones**
+
+| # | Title | Status |
+| --- | --- | --- |
+| 3.1 | `CKShare` creation + `UICloudSharingController` bridge + Share Household button | 🟡 In review |
+| 3.2 | Share-acceptance handler (`UIApplicationDelegateAdaptor`) | ⏳ Queued |
+| 3.3 | Cross-store write routing (private vs shared on insert) + verification runbook | ⏳ Queued |
 
 ---
 

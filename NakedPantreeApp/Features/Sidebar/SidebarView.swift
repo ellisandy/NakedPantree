@@ -7,12 +7,14 @@ struct SidebarView: View {
     @Binding var selection: SidebarSelection?
     @Environment(\.repositories) private var repositories
     @Environment(\.remoteChangeMonitor) private var remoteChangeMonitor
+    @Environment(\.householdSharing) private var householdSharing
 
     @State private var locations: [Location] = []
     @State private var householdID: Household.ID?
     @State private var loadError: Error?
     @State private var formMode: LocationFormView.Mode?
     @State private var pendingDelete: Location?
+    @State private var isPresentingShareSheet = false
 
     var body: some View {
         List(selection: $selection) {
@@ -63,10 +65,34 @@ struct SidebarView: View {
                 }
                 .disabled(householdID == nil)
             }
+            // Share Household lives next to the New Location action.
+            // Hidden in previews / tests / snapshot mode where the
+            // sharing service is nil — see CloudHouseholdSharingService.
+            if householdSharing != nil {
+                ToolbarItem(placement: .secondaryAction) {
+                    Button {
+                        isPresentingShareSheet = true
+                    } label: {
+                        Label("Share Household", systemImage: "person.crop.circle.badge.plus")
+                    }
+                    .accessibilityIdentifier("sidebar.shareHousehold")
+                    .disabled(householdID == nil)
+                }
+            }
         }
         .sheet(item: $formMode) { mode in
             LocationFormView(mode: mode) {
                 Task { await reload() }
+            }
+        }
+        .sheet(isPresented: $isPresentingShareSheet) {
+            if let householdID, let sharing = householdSharing {
+                CloudSharingControllerView(
+                    householdID: householdID,
+                    sharing: sharing,
+                    onCompletion: { isPresentingShareSheet = false }
+                )
+                .ignoresSafeArea()
             }
         }
         .confirmationDialog(
