@@ -165,6 +165,50 @@ Before requesting review:
 
 ---
 
+## 4a. Screenshots
+
+App Store / TestFlight screenshots are generated headlessly from a seeded
+fixture state — there's no manual capture pass per release. The pipeline
+ships under issue [#12](https://github.com/ellisandy/NakedPantree/issues/12).
+
+The app detects a `--snapshot-mode` launch argument and swaps its Core
+Data stack for an in-memory bundle pre-populated by `SnapshotFixtures`.
+`SnapshotsUITests` (in `NakedPantreeUITests`) launches with that flag,
+navigates to each canonical surface, and attaches a PNG via
+`XCUIScreen.main.screenshot()` + `XCTAttachment(lifetime: .keepAlways)`.
+
+### Run locally
+
+```bash
+xcodebuild test \
+    -project NakedPantree.xcodeproj \
+    -scheme NakedPantree \
+    -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max,OS=latest' \
+    -only-testing:NakedPantreeUITests/SnapshotsUITests \
+    -resultBundlePath Snapshots.xcresult \
+    CODE_SIGNING_ALLOWED=NO
+
+scripts/extract-screenshots.sh Snapshots.xcresult "iPhone 6.9" en-US
+```
+
+This writes PNGs to `screenshots/en-US/iPhone 6.9/` in the Fastlane
+layout. Repeat for each device size (`iPad Pro 13-inch (M4)`,
+`iPhone 16 Plus`, etc.) when App Store sizing requirements change.
+
+### Run via GitHub Actions
+
+The `Screenshots` workflow (`.github/workflows/screenshots.yml`) runs on
+manual `workflow_dispatch` only — it never gates a PR. From the repo's
+**Actions** tab, pick **Screenshots → Run workflow**. The job runs
+across the configured device matrix and uploads the PNGs as artifacts
+named `screenshots-<device-label>`.
+
+The regular `Build & Test` workflow excludes `SnapshotsUITests` (via
+`-skip-testing:NakedPantreeUITests/SnapshotsUITests`) so PR runs stay
+fast.
+
+---
+
 ## 5. Manual QA
 
 The full per-release checklist lives in `ARCHITECTURE.md` §11. The short

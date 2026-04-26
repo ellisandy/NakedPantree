@@ -1,0 +1,68 @@
+name: Screenshots
+
+# Manual trigger only. App Store / TestFlight screenshots are an
+# on-demand artifact, not a PR gate. See issue #12 for the rationale.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    name: Capture (${{ matrix.label }})
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - device: "iPhone 17 Pro Max"
+            label: "iPhone 6.9"
+          - device: "iPad Pro 13-inch (M4)"
+            label: "iPad 13"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain versions
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Capture snapshots
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project NakedPantree.xcodeproj \
+            -scheme NakedPantree \
+            -destination "platform=iOS Simulator,name=${{ matrix.device }},OS=latest" \
+            -only-testing:NakedPantreeUITests/SnapshotsUITests \
+            -resultBundlePath Snapshots.xcresult \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Extract PNGs
+        run: scripts/extract-screenshots.sh Snapshots.xcresult "${{ matrix.label }}" en-US
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ matrix.label }}
+          path: screenshots/
+          if-no-files-found: error
+
+      - name: Upload xcresult bundle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Snapshots-${{ matrix.label }}.xcresult
+          path: Snapshots.xcresult
+          if-no-files-found: ignore

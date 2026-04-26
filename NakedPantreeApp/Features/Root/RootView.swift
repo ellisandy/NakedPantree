@@ -29,6 +29,18 @@ struct RootView: View {
                 location: repositories.location
             )
             try? await bootstrap.bootstrapIfNeeded()
+
+            // Snapshot mode: respect any deep-link env vars so the
+            // screenshot captures the requested surface without UI
+            // taps. A no-op outside snapshot mode.
+            if SnapshotFixtures.isSnapshotMode {
+                if let initial = await SnapshotFixtures.resolveInitialSidebar(in: repositories) {
+                    sidebarSelection = initial
+                }
+                if let itemID = await SnapshotFixtures.resolveInitialItem(in: repositories) {
+                    selectedItemID = itemID
+                }
+            }
         }
     }
 }

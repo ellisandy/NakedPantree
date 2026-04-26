@@ -51,6 +51,8 @@ jobs:
       - name: Build & test
         run: |
           set -o pipefail
+          # `SnapshotsUITests` is captured separately by the
+          # screenshots workflow on demand — keep PR runs fast.
           xcodebuild test \
             -project NakedPantree.xcodeproj \
             -scheme NakedPantree \
@@ -58,6 +60,7 @@ jobs:
             -configuration Debug \
             -resultBundlePath TestResults.xcresult \
             -skipPackagePluginValidation \
+            -skip-testing:NakedPantreeUITests/SnapshotsUITests \
             CODE_SIGNING_ALLOWED=NO
       - name: Upload xcresult on failure
         if: failure()
