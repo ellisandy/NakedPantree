@@ -307,6 +307,68 @@ to roll back.
 
 ---
 
+## 5b. Phase 3 — Sharing verification
+
+Two-device, two-account verification of the share flow that landed
+in Phase 3.1 / 3.2 / 3.3. Prerequisite: a second iCloud account on a
+second physical device, both signed into the developer team
+provisioning these builds.
+
+### 1. Send the share
+
+On phone A (account A):
+
+1. Launch the app, add a few items so the share has content.
+2. Sidebar toolbar → **Share Household** (the
+   `person.crop.circle.badge.plus` icon next to `+`).
+3. `UICloudSharingController` presents. Pick a transport
+   (Messages is fastest for testing) and invite the email address
+   tied to account B.
+4. Confirm the share appears in the [CloudKit Console](https://icloud.developer.apple.com/dashboard)
+   under the `iCloud.cc.mnmlst.nakedpantree` container's
+   `cloudkit.share` records, scoped to phone A's user record.
+
+### 2. Accept on the second device
+
+On phone B (account B):
+
+1. Open the invite link from Messages / Mail.
+2. iOS may show a "Choose App" prompt — pick Naked Pantree.
+3. `application(_:userDidAcceptCloudKitShareWith:)` fires; the
+   shared household imports into the local shared store.
+4. The sidebar should now show phone A's locations (after the
+   `RemoteChangeMonitor` debounce settles, ~1-2s).
+5. Add an item on phone B → it should appear on phone A within
+   ~5s. Same for edits and deletes.
+
+### 3. Phase 3 exit criteria
+
+Tick these in `ROADMAP.md` Phase 3 once each passes on real devices:
+
+- Two devices on different iCloud accounts both see and edit the
+  same household.
+- Edits round-trip in both directions within ~5s.
+- Removing a participant (via the share controller's "Stop
+  Sharing") removes their access on the next launch — verifies via
+  the `cloudSharingControllerDidStopSharing` delegate path.
+
+### Failure modes
+
+- **Phone B sees nothing after accepting.** Check Xcode console
+  on phone B for `acceptShareInvitations` errors. The most common
+  is "shared store unavailable" — the shared store description in
+  `CoreDataStack.cloudKitContainer(name:)` failed to load. Re-check
+  the App ID's CloudKit capability in the developer portal.
+- **Phone B sees the share but can't edit.** Check the share's
+  permission level in the controller — defaults to read-only. Set
+  to read-write before sending.
+- **Phone B sees a `"Kitchen"` location appear on phone A out of
+  nowhere.** That's a Bootstrap-into-shared-store regression.
+  `BootstrapService` must call `ensurePrivateHousehold()`, not
+  `currentHousehold()`. See `BootstrapService.swift`.
+
+---
+
 ## 6. Release
 
 > **TODO (Xcode Cloud setup PR):** document the Xcode Cloud workflow names

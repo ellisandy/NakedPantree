@@ -16,6 +16,12 @@ public actor InMemoryHouseholdRepository: HouseholdRepository {
         return new
     }
 
+    /// Single-store mock — same record as `currentHousehold()` since
+    /// there's no shared store to distinguish from.
+    public func ensurePrivateHousehold() async throws -> Household {
+        try await currentHousehold()
+    }
+
     public func update(_ household: Household) async throws {
         current = household
     }

@@ -8,8 +8,20 @@ import Foundation
 /// `"Kitchen"` location described in `ARCHITECTURE.md` §6) is the
 /// responsibility of an app-level startup step that calls into both
 /// repositories — the household repo stays narrowly scoped to its entity.
+///
+/// **Phase 3 sharing semantics.** `currentHousehold()` prefers a
+/// shared-store household over a private one when both exist — the
+/// recipient who accepts a share lands on the shared household
+/// directly. `ensurePrivateHousehold()` is the explicit private-store
+/// variant: returns the local-only household, creating it if needed.
+/// `BootstrapService` uses the latter so it never seeds a "Kitchen"
+/// into a sender's shared household.
 public protocol HouseholdRepository: Sendable {
     func currentHousehold() async throws -> Household
+    /// Returns the household that lives in the *private* store,
+    /// creating it on first call. Always private-only — ignores any
+    /// accepted shared households entirely.
+    func ensurePrivateHousehold() async throws -> Household
     func update(_ household: Household) async throws
 }
 
