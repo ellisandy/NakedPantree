@@ -43,7 +43,9 @@ struct NakedPantreeApp: App {
             // Phase 2.1: production stack is CloudKit-mirrored. Phase 3
             // adds the sharing service against the same container.
             let container = CoreDataStack.cloudKitContainer()
-            let cloudKitContainer = CKContainer(identifier: CoreDataStack.cloudKitContainerIdentifier)
+            let cloudKitContainer = CKContainer(
+                identifier: CoreDataStack.cloudKitContainerIdentifier
+            )
             repositories = Repositories(
                 household: CoreDataHouseholdRepository(container: container),
                 location: CoreDataLocationRepository(container: container),
