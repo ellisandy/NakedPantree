@@ -19,6 +19,7 @@ struct SidebarView: View {
                 ForEach(SmartList.allCases) { list in
                     Label(list.title, systemImage: list.systemImage)
                         .tag(SidebarSelection.smartList(list))
+                        .accessibilityIdentifier("sidebar.smartList.\(list.rawValue)")
                 }
             }
 
@@ -31,6 +32,7 @@ struct SidebarView: View {
                     ForEach(locations) { location in
                         Label(location.name, systemImage: location.kind.systemImage)
                             .tag(SidebarSelection.location(location.id))
+                            .accessibilityIdentifier("sidebar.location.\(location.name)")
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
                                     pendingDelete = location
