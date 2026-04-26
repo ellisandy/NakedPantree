@@ -239,6 +239,76 @@ another manual step.
 
 ---
 
+## 5a. Phase 2 — CloudKit dev schema verification
+
+A one-time verification that flips Phase 2 from "code lands" to
+"sync actually works." Prerequisite: [#23](https://github.com/ellisandy/NakedPantree/issues/23)
+done — the iCloud container exists in the developer portal and the
+App ID has CloudKit + Push Notifications enabled.
+
+### 1. Single-device dev schema population
+
+The CloudKit dev schema is **not deployed by hand**.
+`NSPersistentCloudKitContainer` populates it automatically the first
+time the app writes against a real iCloud account. To trigger it:
+
+1. Open the simulator (`iPhone 17 Pro Max` is what CI uses; any device
+   works) → Settings → Apple Account → sign in with a real iCloud
+   account. A dedicated test account is fine.
+2. Run the app from Xcode (Debug → Cmd-R). Watch the Xcode console for
+   `CoreData+CloudKit` initialisation logs and confirm there's no
+   `Failed to initialise CloudKit Schema` line.
+3. Add a location, an item, and edit the item — three writes, three
+   record types.
+4. Open the [CloudKit Console](https://icloud.developer.apple.com/dashboard),
+   pick `iCloud.cc.mnmlst.nakedpantree`, **Schema → Record Types**.
+   Verify all four exist with the `CD_` prefix Core Data adds:
+   - `CD_HouseholdEntity`
+   - `CD_LocationEntity`
+   - `CD_ItemEntity`
+   - `CD_ItemPhotoEntity` (created lazily once a photo is added —
+     skip until Phase 5)
+5. Spot-check a record type's fields against the model in
+   `Packages/Core/Sources/NakedPantreePersistence/Model/NakedPantree.xcdatamodeld/`
+   — `CD_<attr>` per attribute. CloudKit-mirrored attributes are
+   optional or have a default per the §4 rule; relationships are
+   optional both directions per the §5 rule.
+
+If the schema doesn't appear within ~30s of a write, the typical
+causes are:
+
+- App ID's CloudKit container assignment didn't save in the portal.
+  Re-check [#23](https://github.com/ellisandy/NakedPantree/issues/23)
+  step 2.
+- Provisioning profile is stale. In Xcode: Signing & Capabilities →
+  click the team picker and pick again to force a regenerate.
+- Simulator isn't actually signed in. The account-status banner
+  (`AccountStatusBanner`, Phase 2.3) makes this loud.
+
+### 2. Two-device sync verification
+
+The Phase 2 exit criteria require this on real devices, not just the
+simulator. With two devices on the same iCloud account:
+
+- Add an item on phone A; phone B sees it within ~5s (foregrounded).
+- Edit on phone A; phone B reflects the edit. Repeat for delete.
+- Phone A in airplane mode → write → re-enable network → no duplicates.
+- Cause a conflict (edit `quantity` on both phones while both offline,
+  reconnect) → last write wins per `ARCHITECTURE.md` §5.
+
+Tick the boxes in ROADMAP.md Phase 2 *exit criteria* once each
+passes; mark Phase 2 ✅ when all four are green.
+
+### 3. Production schema deploy gate
+
+The dev schema deploy above only populates **development**. Production
+deploy is a separate, deliberate step — covered in §6 (Release) and
+gated behind a TestFlight build that exercises every field. Don't
+deploy production until then; it's a one-way ratchet that's annoying
+to roll back.
+
+---
+
 ## 6. Release
 
 > **TODO (Xcode Cloud setup PR):** document the Xcode Cloud workflow names
