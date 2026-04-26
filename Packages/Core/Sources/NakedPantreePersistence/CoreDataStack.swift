@@ -30,7 +30,7 @@ public enum CoreDataStack {
     /// `com.apple.developer.icloud-container-identifiers` entry in
     /// `NakedPantree.entitlements` and the container provisioned in
     /// the developer portal (see issue #23).
-    public static let cloudKitContainerIdentifier = "iCloud.com.ellisandy.NakedPantree"
+    public static let cloudKitContainerIdentifier = "iCloud.cc.mnmlst.nakedpantree"
 
     /// Creates a disk-backed local-only container — SQLite at the OS-default
     /// location (Application Support / `<name>.sqlite`). Used by tests and
