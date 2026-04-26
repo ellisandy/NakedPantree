@@ -95,7 +95,7 @@ Every later phase assumes this skeleton exists.
 - [ ] Search returns results across all locations.
 - [ ] Every user-facing string passes the `DESIGN_GUIDELINES.md` §10
       checklist.
-- [ ] Repository protocol tests pass with both the Core Data
+- [x] Repository protocol tests pass with both the Core Data
       implementation and an in-memory mock.
 
 **Sub-milestones**
@@ -106,8 +106,8 @@ The phase is large enough to land in chunks. Each row tracks one PR.
 | --- | --- | --- |
 | 1.1 | Domain types + repository protocols | ✅ Merged ([apps#10](https://github.com/ellisandy/NakedPantree/pull/10)) |
 | 1.2a | Core Data stack + `Household` and `Location` repos | ✅ Merged ([apps#11](https://github.com/ellisandy/NakedPantree/pull/11)) |
-| 1.2b | `Item` and `ItemPhoto` repos + cascade-delete tests | ⬜ Next |
-| 1.3 | `NavigationSplitView` shell (sidebar / content / detail) | ⬜ |
+| 1.2b | `Item` and `ItemPhoto` repos + cascade-delete tests | ✅ Merged ([apps#13](https://github.com/ellisandy/NakedPantree/pull/13)) |
+| 1.3 | `NavigationSplitView` shell (sidebar / content / detail) | ⬜ Next |
 | 1.4 | CRUD wiring for `Location`s and `Item`s | ⬜ |
 | 1.5 | Search across locations + first-launch bootstrap | ⬜ |
 
