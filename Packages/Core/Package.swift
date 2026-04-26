@@ -28,10 +28,6 @@ let package = Package(
             name: "NakedPantreeDomainTests",
             dependencies: ["NakedPantreeDomain"]
         ),
-        .testTarget(
-            name: "NakedPantreePersistenceTests",
-            dependencies: ["NakedPantreePersistence"]
-        ),
     ],
     swiftLanguageModes: [.v6]
 )

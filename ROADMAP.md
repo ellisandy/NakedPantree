@@ -107,8 +107,8 @@ The phase is large enough to land in chunks. Each row tracks one PR.
 | 1.1 | Domain types + repository protocols | ✅ Merged ([apps#10](https://github.com/ellisandy/NakedPantree/pull/10)) |
 | 1.2a | Core Data stack + `Household` and `Location` repos | ✅ Merged ([apps#11](https://github.com/ellisandy/NakedPantree/pull/11)) |
 | 1.2b | `Item` and `ItemPhoto` repos + cascade-delete tests | ✅ Merged ([apps#13](https://github.com/ellisandy/NakedPantree/pull/13)) |
-| 1.3 | `NavigationSplitView` shell (sidebar / content / detail) | ⬜ Next |
-| 1.4 | CRUD wiring for `Location`s and `Item`s | ⬜ |
+| 1.3 | `NavigationSplitView` shell (sidebar / content / detail) | ✅ Merged ([apps#14](https://github.com/ellisandy/NakedPantree/pull/14)) |
+| 1.4 | CRUD wiring for `Location`s and `Item`s | ⬜ Next |
 | 1.5 | Search across locations + first-launch bootstrap | ⬜ |
 
 > The split is not load-bearing — it's a guide. If a piece of work

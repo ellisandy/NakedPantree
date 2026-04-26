@@ -3,8 +3,8 @@ import Testing
 
 @Suite("App target")
 struct PlaceholderTests {
-    @Test("Hello-world view exists")
-    func contentViewExists() {
-        _ = ContentView()
+    @Test("RootView constructs without crashing")
+    func rootViewConstructs() {
+        _ = RootView()
     }
 }

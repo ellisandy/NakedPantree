@@ -25,6 +25,27 @@ public enum CoreDataStack {
         return model
     }()
 
+    /// Creates a disk-backed container — SQLite at the OS-default location
+    /// (Application Support / `<name>.sqlite`). Lightweight migration is
+    /// enabled in advance of Phase 2 and any later schema bumps; until
+    /// then there's nothing to migrate.
+    public static func persistentContainer(name: String = "NakedPantree") -> NSPersistentContainer {
+        let container = NSPersistentContainer(name: name, managedObjectModel: model)
+        if let description = container.persistentStoreDescriptions.first {
+            description.shouldMigrateStoreAutomatically = true
+            description.shouldInferMappingModelAutomatically = true
+        }
+        var loadError: Error?
+        container.loadPersistentStores { _, error in loadError = error }
+        if let loadError {
+            fatalError("Persistent store failed to load: \(loadError)")
+        }
+        container.viewContext.mergePolicy = NSMergePolicy(
+            merge: .mergeByPropertyObjectTrumpMergePolicyType
+        )
+        return container
+    }
+
     /// Creates an in-memory container — the SQLite store is bound to
     /// `/dev/null`, so nothing reaches disk. Used for tests and SwiftUI
     /// previews. Each call returns a fresh container with an empty store.
