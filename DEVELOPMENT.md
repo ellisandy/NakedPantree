@@ -167,6 +167,10 @@ Before requesting review:
 - [ ] `swift-format lint --recursive --strict --parallel .` and
       `swiftlint lint --strict` exit clean. Plain `swift-format lint`
       without `--strict` exits 0 on warnings — match CI exactly.
+- [ ] Full test suite passes the way CI runs it — *not* with
+      `-only-testing`. `xcodebuild test ... -skip-testing:NakedPantreeUITests/SnapshotsUITests`
+      catches UI smoke regressions a narrow filter would mask. See
+      `.github/workflows/build-test.yml` for the exact invocation.
 - [ ] Manual checklist (`ARCHITECTURE.md` §11) re-run if the PR touches
       sync, sharing, notifications, or photos.
 - [ ] Screenshot (or short video) attached for any UI-visible change.
