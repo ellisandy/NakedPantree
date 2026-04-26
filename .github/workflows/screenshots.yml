@@ -21,7 +21,7 @@ jobs:
         include:
           - device: "iPhone 17 Pro Max"
             label: "iPhone 6.9"
-          - device: "iPad Pro 13-inch (M4)"
+          - device: "iPad Pro 13-inch (M5)"
             label: "iPad 13"
     steps:
       - uses: actions/checkout@v4

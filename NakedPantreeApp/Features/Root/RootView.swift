@@ -4,42 +4,65 @@ import SwiftUI
 /// Three-column `NavigationSplitView` per `ARCHITECTURE.md` §7. Sidebar
 /// selection drives what the content column shows; content selection
 /// drives what the detail column shows.
+///
+/// Children that read repositories (`SidebarView`, `ItemsView`,
+/// `AllItemsView`) cache their fetch in `@State` and only refetch on
+/// their own `.task`. To keep first-launch bootstrap from racing those
+/// caches — the original Kitchen-doesn't-appear-on-fresh-install bug —
+/// we gate the whole shell on `bootstrapComplete`. The brief
+/// brand-color splash is acceptable for an in-memory + one-row
+/// Core Data write that completes in single-digit milliseconds.
 struct RootView: View {
-    @State private var sidebarSelection: SidebarSelection? = .smartList(.allItems)
+    // Initial selection is `nil` so iPhone (compact `NavigationSplitView`)
+    // lands the user on the sidebar — defaulting to a smart list there
+    // auto-collapses to the content column on first launch, hiding the
+    // sidebar entirely until they tap Back. iPad (regular) still shows
+    // both columns; the placeholder in `ItemsView` covers the nil case.
+    @State private var sidebarSelection: SidebarSelection?
     @State private var selectedItemID: Item.ID?
+    @State private var bootstrapComplete = false
     @Environment(\.repositories) private var repositories
 
     var body: some View {
-        NavigationSplitView {
-            SidebarView(selection: $sidebarSelection)
-        } content: {
-            ItemsView(
-                selection: sidebarSelection,
-                selectedItemID: $selectedItemID
-            )
-        } detail: {
-            ItemDetailView(itemID: selectedItemID)
+        Group {
+            if bootstrapComplete {
+                NavigationSplitView {
+                    SidebarView(selection: $sidebarSelection)
+                } content: {
+                    ItemsView(
+                        selection: sidebarSelection,
+                        selectedItemID: $selectedItemID
+                    )
+                } detail: {
+                    ItemDetailView(itemID: selectedItemID)
+                }
+            } else {
+                Color.brandWarmCream
+                    .ignoresSafeArea()
+            }
         }
         .task {
-            // First-launch bootstrap per ARCHITECTURE.md §6: ensure the
-            // user lands in a household with at least one location. The
-            // service is idempotent — no-op on every subsequent launch.
-            let bootstrap = BootstrapService(
-                household: repositories.household,
-                location: repositories.location
-            )
-            try? await bootstrap.bootstrapIfNeeded()
+            await runBootstrap()
+            bootstrapComplete = true
+        }
+    }
 
-            // Snapshot mode: respect any deep-link env vars so the
-            // screenshot captures the requested surface without UI
-            // taps. A no-op outside snapshot mode.
-            if SnapshotFixtures.isSnapshotMode {
-                if let initial = await SnapshotFixtures.resolveInitialSidebar(in: repositories) {
-                    sidebarSelection = initial
-                }
-                if let itemID = await SnapshotFixtures.resolveInitialItem(in: repositories) {
-                    selectedItemID = itemID
-                }
+    private func runBootstrap() async {
+        let bootstrap = BootstrapService(
+            household: repositories.household,
+            location: repositories.location
+        )
+        try? await bootstrap.bootstrapIfNeeded()
+
+        // Snapshot mode: respect any deep-link env vars so the screenshot
+        // captures the requested surface without UI taps. A no-op outside
+        // snapshot mode.
+        if SnapshotFixtures.isSnapshotMode {
+            if let initial = await SnapshotFixtures.resolveInitialSidebar(in: repositories) {
+                sidebarSelection = initial
+            }
+            if let itemID = await SnapshotFixtures.resolveInitialItem(in: repositories) {
+                selectedItemID = itemID
             }
         }
     }
