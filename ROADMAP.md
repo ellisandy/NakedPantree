@@ -117,9 +117,9 @@ The phase is large enough to land in chunks. Each row tracks one PR.
 
 ---
 
-## Phase 2 — CloudKit sync (private database only) 🟡
+## Phase 2 — CloudKit sync (private database only) ✅
 
-**Status:** In progress.
+**Status:** Complete (verified on real devices, see sub-milestones below).
 
 **Goal:** two devices on the same iCloud account stay in sync.
 
@@ -140,13 +140,13 @@ The phase is large enough to land in chunks. Each row tracks one PR.
 
 **Exit criteria**
 
-- [ ] Two devices signed into the same iCloud account see inserts within
+- [x] Two devices signed into the same iCloud account see inserts within
       ~5s of each other.
-- [ ] Airplane-mode write replays cleanly on reconnect with no
+- [x] Airplane-mode write replays cleanly on reconnect with no
       duplicates.
-- [ ] No `unique constraint` errors at runtime — uniqueness is enforced
+- [x] No `unique constraint` errors at runtime — uniqueness is enforced
       in code at insert time.
-- [ ] CloudKit dev schema matches the model exactly.
+- [x] CloudKit dev schema matches the model exactly.
 
 **Sub-milestones**
 
@@ -155,7 +155,7 @@ The phase is large enough to land in chunks. Each row tracks one PR.
 | 2.1 | CloudKit container + entitlements + private-store assignment | ✅ Merged ([apps#24](https://github.com/ellisandy/NakedPantree/pull/24)) |
 | 2.2 | `NSPersistentStoreRemoteChange` observer + view auto-refresh | ✅ Merged ([apps#25](https://github.com/ellisandy/NakedPantree/pull/25)) |
 | 2.3 | Account-status banner | ✅ Merged ([apps#26](https://github.com/ellisandy/NakedPantree/pull/26)) |
-| 2.4 | CloudKit dev schema deploy verification | 🟡 In review |
+| 2.4 | CloudKit dev schema deploy verification | ✅ Merged ([apps#29](https://github.com/ellisandy/NakedPantree/pull/29)) |
 
 ---
 
