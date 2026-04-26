@@ -153,8 +153,8 @@ The phase is large enough to land in chunks. Each row tracks one PR.
 | # | Title | Status |
 | --- | --- | --- |
 | 2.1 | CloudKit container + entitlements + private-store assignment | ✅ Merged ([apps#24](https://github.com/ellisandy/NakedPantree/pull/24)) |
-| 2.2 | `NSPersistentStoreRemoteChange` observer + view auto-refresh | 🟡 In review |
-| 2.3 | Account-status banner | ⏳ Queued |
+| 2.2 | `NSPersistentStoreRemoteChange` observer + view auto-refresh | ✅ Merged ([apps#25](https://github.com/ellisandy/NakedPantree/pull/25)) |
+| 2.3 | Account-status banner | 🟡 In review |
 | 2.4 | CloudKit dev schema deploy verification | ⏳ Queued (gated on Apple-side setup, [issue #23](https://github.com/ellisandy/NakedPantree/issues/23)) |
 
 ---
