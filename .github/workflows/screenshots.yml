@@ -1,9 +1,17 @@
 name: Screenshots
 
-# Manual trigger only. App Store / TestFlight screenshots are an
-# on-demand artifact, not a PR gate. See issue #12 for the rationale.
+# Two triggers, both intentional:
+#   - workflow_dispatch: ad-hoc captures (UI tweaks, copy review).
+#   - push of a `v*` tag: every release-cut auto-captures so the PNGs
+#     are versioned alongside the binary that ships to TestFlight /
+#     App Store. See issue #12 for the rationale.
+# Not gated on PRs — captures are slow and most PRs don't change
+# canonical surfaces.
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "v*"
 
 concurrency:
   group: screenshots-${{ github.ref }}
