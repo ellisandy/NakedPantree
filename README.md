@@ -7,9 +7,22 @@ freezer, and beyond — across the kitchen, garage, barn, and that extra
 freezer outside. Multi-location, shared between household members, and it
 reminds you before things expire.
 
-**Status:** in planning. No app code yet — design, architecture, and the
-phased roadmap are committed; implementation begins with Phase 0 (Xcode
-project scaffolding) per [`ROADMAP.md`](ROADMAP.md).
+**Status:** Phase 0 (project scaffolding) landed. The app builds to a
+hello-world screen on a Forest Green background. Phase 1 (single-user MVP)
+is next per [`ROADMAP.md`](ROADMAP.md).
+
+## Quick start
+
+```bash
+brew install xcodegen swift-format swiftlint
+git clone <repo-url> && cd NakedPantree
+xcodegen generate
+scripts/install-hooks.sh
+open NakedPantree.xcodeproj
+```
+
+Set your Development Team in **Signing & Capabilities**, then `Cmd+R`.
+Full setup details in [`DEVELOPMENT.md`](DEVELOPMENT.md).
 
 ## What's here
 
