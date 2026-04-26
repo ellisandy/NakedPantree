@@ -1,6 +1,6 @@
 name: NakedPantree
 options:
-  bundleIdPrefix: com.ellisandy
+  bundleIdPrefix: cc.mnmlst
   deploymentTarget:
     iOS: "26.0"
   developmentLanguage: en
@@ -42,7 +42,7 @@ targets:
         product: NakedPantreePersistence
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.ellisandy.NakedPantree
+        PRODUCT_BUNDLE_IDENTIFIER: cc.mnmlst.nakedpantree
         PRODUCT_NAME: "Naked Pantree"
         PRODUCT_MODULE_NAME: NakedPantree
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
