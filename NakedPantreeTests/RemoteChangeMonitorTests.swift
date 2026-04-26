@@ -20,7 +20,10 @@ struct RemoteChangeMonitorTests {
 
         // Yield to the observer Task long enough for it to deliver the
         // notification and hop to MainActor — a few runloop turns.
-        try await waitFor(condition: { monitor.changeToken != initial }, timeoutNanos: 1_000_000_000)
+        try await waitFor(
+            condition: { monitor.changeToken != initial },
+            timeoutNanos: 1_000_000_000
+        )
         #expect(monitor.changeToken != initial)
     }
 

@@ -186,12 +186,13 @@ A short list of traps that have already cost time:
   explicit user permission. Fix the hook or the code.
 - **Assuming worktrees just work.** They don't, in every environment —
   re-read §3.
-- **Running `swift-format lint` without `--strict`.** Plain
-  `swift-format lint` exits 0 on warnings (`[LineLength]`,
-  `[OrderedImports]`, etc.) — your local check passes while
-  `.github/workflows/lint.yml` fails on the same code. Always use
-  `swift-format lint --recursive --strict --parallel .` before pushing.
-  See `DEVELOPMENT.md` §3.
+- **Running `swift-format lint` with `--parallel` *or* without
+  `--strict`.** Both hide CI failures locally. Plain `swift-format
+  lint` exits 0 on warnings (`[LineLength]`, `[OrderedImports]`); the
+  Xcode-bundled binary under `--parallel` can also suppress per-file
+  violations that CI's `swift:6.0` container reports. Run
+  `swift-format lint --recursive --strict .` (no `--parallel`) before
+  pushing. See `DEVELOPMENT.md` §3.
 
 ---
 
