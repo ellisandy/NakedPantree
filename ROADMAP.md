@@ -90,7 +90,7 @@ Every later phase assumes this skeleton exists.
 **Exit criteria**
 
 - [ ] App launches to the default household with one location.
-- [ ] User can add, rename, and delete locations and items with no
+- [x] User can add, rename, and delete locations and items with no
       crashes and no console warnings.
 - [ ] Search returns results across all locations.
 - [ ] Every user-facing string passes the `DESIGN_GUIDELINES.md` §10
@@ -108,8 +108,8 @@ The phase is large enough to land in chunks. Each row tracks one PR.
 | 1.2a | Core Data stack + `Household` and `Location` repos | ✅ Merged ([apps#11](https://github.com/ellisandy/NakedPantree/pull/11)) |
 | 1.2b | `Item` and `ItemPhoto` repos + cascade-delete tests | ✅ Merged ([apps#13](https://github.com/ellisandy/NakedPantree/pull/13)) |
 | 1.3 | `NavigationSplitView` shell (sidebar / content / detail) | ✅ Merged ([apps#14](https://github.com/ellisandy/NakedPantree/pull/14)) |
-| 1.4 | CRUD wiring for `Location`s and `Item`s | ⬜ Next |
-| 1.5 | Search across locations + first-launch bootstrap | ⬜ |
+| 1.4 | CRUD wiring for `Location`s and `Item`s | ✅ Merged ([apps#15](https://github.com/ellisandy/NakedPantree/pull/15)) |
+| 1.5 | Search across locations + first-launch bootstrap | ⬜ Next |
 
 > The split is not load-bearing — it's a guide. If a piece of work
 > doesn't fit cleanly, retitle a row or add one. Don't force scope into
