@@ -97,6 +97,19 @@ public actor InMemoryItemRepository: ItemRepository {
         items[id]
     }
 
+    public func allItems(in householdID: Household.ID) async throws -> [Item] {
+        var results: [Item] = []
+        for item in items.values {
+            let location = try await locationLookup(item.locationID)
+            if location?.householdID == householdID {
+                results.append(item)
+            }
+        }
+        return results.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+
     public func search(_ query: String, in householdID: Household.ID) async throws -> [Item] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return [] }

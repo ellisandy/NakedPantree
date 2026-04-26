@@ -33,6 +33,20 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
         }
     }
 
+    public func allItems(in householdID: Household.ID) async throws -> [Item] {
+        try await container.performBackgroundTask { context in
+            let request = NSFetchRequest<NSManagedObject>(entityName: "ItemEntity")
+            request.predicate = NSPredicate(
+                format: "location.household.id == %@",
+                householdID as CVarArg
+            )
+            request.sortDescriptors = [
+                NSSortDescriptor(key: "name", ascending: true)
+            ]
+            return try context.fetch(request).map(Self.makeItem)
+        }
+    }
+
     public func search(_ query: String, in householdID: Household.ID) async throws -> [Item] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return [] }
