@@ -159,9 +159,9 @@ The phase is large enough to land in chunks. Each row tracks one PR.
 
 ---
 
-## Phase 3 — Sharing across households 🟡
+## Phase 3 — Sharing across households ✅
 
-**Status:** In progress.
+**Status:** Complete (verified on real devices, see sub-milestones below).
 
 **Goal:** two different iCloud accounts can collaborate on one
 household.
@@ -185,10 +185,10 @@ household.
 
 **Exit criteria**
 
-- [ ] Two devices on different iCloud accounts can both see and edit the
+- [x] Two devices on different iCloud accounts can both see and edit the
       same household after share acceptance.
-- [ ] Removing a participant removes their access on the next launch.
-- [ ] Manual checklist (`ARCHITECTURE.md` §11) entries 1–3 all pass.
+- [x] Removing a participant removes their access on the next launch.
+- [x] Manual checklist (`ARCHITECTURE.md` §11) entries 1–3 all pass.
 
 **Sub-milestones**
 
@@ -200,7 +200,9 @@ household.
 
 ---
 
-## Phase 4 — Expiry notifications
+## Phase 4 — Expiry notifications ✅
+
+**Status:** Complete (verified on real devices, see sub-milestones below).
 
 **Goal:** users get a local notification before food expires.
 
@@ -239,7 +241,9 @@ household.
 
 ---
 
-## Phase 5 — Photos
+## Phase 5 — Photos ✅
+
+**Status:** Complete (verified on real devices, see sub-milestones below).
 
 **Goal:** items can carry multiple photos that sync.
 
@@ -407,14 +411,199 @@ visible.
 
 ---
 
-## After TestFlight
+## Phase 8 — TestFlight stability and cosmetic completeness
 
-These are deliberately not v1.0. They live in `ARCHITECTURE.md` §12 and
-will become their own phases when there's a reason to start.
+**Goal:** the TestFlight build is correct under multi-device install
+and stops looking like a placeholder on the home screen.
 
-- Personal macOS CLI tied to the future AI helper.
-- AI ingredient-query integration.
-- Apple Reminders ("add to grocery list") — manual, one-way to start.
+**In scope**
+
+- CI hygiene: GitHub Actions versions bumped past the Node 20 → Node 24
+  deprecation deadline (June 2 2026 hard cutoff).
+- Bootstrap fix so the second device on the same iCloud account
+  doesn't create a duplicate `Household` before CloudKit sync arrives.
+  Items added during the gap must not orphan.
+- Brand app icon replaces the placeholder green tile so the
+  TestFlight build's home-screen presence matches the rest of the
+  brand.
+
+**Out of scope**
+
+- Settings UI for managing duplicate households created by older
+  builds (one-time data hygiene, separate from the code fix).
+- Wider visual brand pass — Phase 10.
+
+**Exit criteria**
+
+- [ ] CI workflows use Node 24-compatible action versions; no
+      deprecation warnings on PR runs.
+- [ ] Fresh-install of a second device tied to an existing iCloud
+      account converges on the existing household within ~30s
+      without creating a duplicate `CD_HouseholdEntity` row.
+- [ ] Items added on the second device immediately after launch
+      survive CloudKit sync — they appear on both devices, not
+      orphaned in a transient household.
+- [ ] App icon on the home screen and in App Store Connect matches
+      the brand spec in `DESIGN_GUIDELINES.md` §7.
+
+**Sub-milestones**
+
+| # | Title | Issue | Status |
+| --- | --- | --- | --- |
+| 8.1 | GitHub Actions Node 24 compatibility (bump `actions/checkout` and friends) | [#57](https://github.com/ellisandy/NakedPantree/issues/57) | ⏳ Pending |
+| 8.2 | Bootstrap defers household creation until first remote-change tick or bounded timeout | [#67](https://github.com/ellisandy/NakedPantree/issues/67) | ⏳ Pending |
+| 8.3 | Replace placeholder app icon with brand icon | [#59](https://github.com/ellisandy/NakedPantree/issues/59) | ⏳ Pending |
+
+> 8.1 is the time-sensitive one and the smallest — land it first.
+> 8.2 is the architectural piece; 8.3 is a one-asset swap.
+
+---
+
+## Phase 9 — Notifications and quality-of-life polish
+
+**Goal:** common interactions get faster; expiry notifications
+become useful instead of annoying.
+
+**In scope**
+
+- Quantity adjusts inline on the item detail view without entering
+  the edit form.
+- Cold-start bootstrap shows progress feedback rather than a
+  brand-color flash.
+- Expiry notifications fire at a user-chosen time of day instead of
+  the hard-coded 9:00 default.
+- Same-day expiry notifications consolidate into a single summary
+  notification rather than firing one per item.
+
+**Out of scope**
+
+- Per-item notification customization (lead time, time of day per
+  item) — too much UI for the value at v1.0.
+- Notification snooze / dismiss actions — separate decision.
+
+**Exit criteria**
+
+- [ ] User can `+1` / `−1` an item's quantity from
+      `ItemDetailView` without going through `ItemFormView`.
+- [ ] Cold-start launch shows a progress / loading state until
+      `bootstrapComplete`, replacing the brand-color flash.
+- [ ] Notification time-of-day is configurable (single setting,
+      household-wide) and the scheduler honors it.
+- [ ] Five items expiring on the same day produce one notification
+      summarizing them, not five.
+
+**Sub-milestones**
+
+| # | Title | Issue | Status |
+| --- | --- | --- | --- |
+| 9.1 | Quantity inc / dec controls on `ItemDetailView` | [#51](https://github.com/ellisandy/NakedPantree/issues/51) | ⏳ Pending |
+| 9.2 | Launch / loading feedback during cold-start bootstrap | [#53](https://github.com/ellisandy/NakedPantree/issues/53) | ⏳ Pending |
+| 9.3 | Expiry-reminder time-of-day picker | [#55](https://github.com/ellisandy/NakedPantree/issues/55) | ⏳ Pending |
+| 9.4 | Roll up same-day expiries into a single summary notification | [#56](https://github.com/ellisandy/NakedPantree/issues/56) | ⏳ Pending |
+
+---
+
+## Phase 10 — Settings, brand pass, and developer ergonomics
+
+**Goal:** household-level controls exist where users expect them,
+the app's visual identity matches the brand, and the developer can
+run dev + TestFlight side-by-side.
+
+**In scope**
+
+- Settings screen with household rename / share / leave / delete
+  surfaces. The household-management UX gap surfaced during Phase 7
+  diagnosis goes here.
+- Brand color and personality pass — apply `DESIGN_GUIDELINES.md`
+  §6 / §9 across the app's primary surfaces (the §52 research
+  issue precedes implementation).
+- Side-by-side dev + TestFlight install support via separate bundle
+  id + CloudKit container for `Debug` config.
+- Self-emission filter on `RemoteChangeMonitor` so local saves
+  don't fire the observer twice (perf polish, not user-visible).
+
+**Out of scope**
+
+- Wholesale UI redesign — restraint per `DESIGN_GUIDELINES.md` §11.
+  Brand pass means apply the existing tokens consistently, not
+  invent new ones.
+- Privacy / legal screens — Phase 11.
+
+**Exit criteria**
+
+- [ ] Settings screen reachable from the sidebar; household
+      management actions all work end-to-end on a real device.
+- [ ] App's typography, color, and copy match
+      `DESIGN_GUIDELINES.md` § 5 / §6 / §3 across every screen
+      that ships in v1.0.
+- [ ] Local Xcode build installs side-by-side with the TestFlight
+      build; the two have visually distinct icons / display names.
+- [ ] `RemoteChangeMonitor` does not fire on saves originating
+      from the same process.
+
+**Sub-milestones**
+
+| # | Title | Issue | Status |
+| --- | --- | --- | --- |
+| 10.1 | Settings screen with household management | [#60](https://github.com/ellisandy/NakedPantree/issues/60) | ⏳ Pending (depends on 8.2 landing first) |
+| 10.2 | Brand color & personality pass — research → implementation | [#52](https://github.com/ellisandy/NakedPantree/issues/52) | ⏳ Pending |
+| 10.3 | Side-by-side dev + TestFlight install | [#68](https://github.com/ellisandy/NakedPantree/issues/68) | ⏳ Pending |
+| 10.4 | Filter self-emission from `RemoteChangeMonitor` via persistent-history tokens | [#28](https://github.com/ellisandy/NakedPantree/issues/28) | ⏳ Pending |
+
+---
+
+## Phase 11 — Pre-App-Store hardening
+
+**Goal:** ship to the public App Store.
+
+**In scope**
+
+- App Store Connect metadata: full description, keywords, support
+  URL, marketing URL, age rating.
+- App Privacy "nutrition label" — covers iCloud, photos, no
+  third-party data sharing.
+- Real screenshots for each device family (iPhone 6.9", iPad 13",
+  Mac via Designed-for-iPad).
+- Final manual QA across iPhone / iPad / Mac on the production
+  CloudKit environment.
+- App Store submission and review response.
+
+**Out of scope**
+
+- Subscription or billing flows.
+- Localization beyond English.
+
+**Exit criteria**
+
+- [ ] App Store Connect record is App-Store-Submission-ready: every
+      required field populated, screenshots uploaded, privacy
+      details accurate.
+- [ ] Submitted build passes App Review (resubmission cycle if
+      needed; the exit gate is acceptance, not first-submission).
+- [ ] App is live on the public App Store.
+
+**Sub-milestones**
+
+> Sub-milestones land as the work happens. Expected starting set:
+> metadata, screenshots, privacy nutrition label, submission. Filled
+> in opportunistically per the same pattern §7 followed.
+
+---
+
+## Beyond v1.0
+
+Once Phase 11 ships, anything still listed below earns its own phase
+when there's a reason to start. Currently parked:
+
+- Barcode scanning + Open Food Facts product lookup
+  ([#4](https://github.com/ellisandy/NakedPantree/issues/4)).
+- Grocery list integration — flag low-stock items, send to Apple
+  Reminders ([#16](https://github.com/ellisandy/NakedPantree/issues/16)).
+- Personal macOS CLI tied to the future AI helper
+  (`ARCHITECTURE.md` §12).
+- AI ingredient-query integration (`ARCHITECTURE.md` §12).
+- OCR on photos for ingredient extraction
+  (`ARCHITECTURE.md` §12).
 
 ---
 
@@ -422,7 +611,7 @@ will become their own phases when there's a reason to start.
 
 | # | Decision | Why |
 | --- | --- | --- |
-| 1 | Eight phases, not three | Each phase is a real exit gate with its own failure modes. Bigger phases hide regressions. |
+| 1 | Many small phases, not three big ones | Each phase is a real exit gate with its own failure modes. Bigger phases hide regressions. v1.0 lands at the end of Phase 11; Phases 8–11 came online as TestFlight feedback surfaced. |
 | 2 | Sync (Phase 2) before Sharing (Phase 3) | Same-account sync is the cheaper test of the CloudKit stack; sharing layers on top. |
 | 3 | Notifications (Phase 4) before Photos (Phase 5) | Notifications exercise the remote-change observer; photos add CKAsset complexity. |
 | 4 | Photos (Phase 5) is the only phase with a documented defer-option | They're valuable but not on the critical path to "two phones, one inventory." |
