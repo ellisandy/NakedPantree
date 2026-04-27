@@ -289,7 +289,9 @@ lazily on the first photo write per `DEVELOPMENT.md` §5a step 4.
 
 ---
 
-## Phase 6 — Cross-household views and adaptive polish
+## Phase 6 — Cross-household views and adaptive polish ✅
+
+**Status:** Complete (verified on real iPad and Mac per `DEVELOPMENT.md` §5e).
 
 **Goal:** the app stops feeling location-shaped and starts feeling
 household-shaped.
@@ -312,7 +314,7 @@ household-shaped.
 
 - [x] Expiring-soon view lists items from every location, ordered by
       expiry.
-- [ ] App is usable on iPad in both orientations and on Mac at multiple
+- [x] App is usable on iPad in both orientations and on Mac at multiple
       window sizes.
 - [x] Empty states across the app pass voice rules and use icon + text
       (never color alone).
@@ -325,7 +327,7 @@ household-shaped.
 | 6.2a | `RecentlyAddedView` (cross-location, sorted by `createdAt` desc) | ✅ Merged ([apps#46](https://github.com/ellisandy/NakedPantree/pull/46)) |
 | 6.2b | Cross-household search surface from the sidebar (`.searchable(placement: .sidebar)`) | ✅ Merged ([apps#48](https://github.com/ellisandy/NakedPantree/pull/48)) |
 | 6.3 | iPad / Mac (Designed for iPad) verification + `DEVELOPMENT.md` §5e runbook | ✅ Merged ([apps#50](https://github.com/ellisandy/NakedPantree/pull/50)) |
-| 6.4 | Empty-state copy pass with brand voice | 🟡 In review |
+| 6.4 | Empty-state copy pass with brand voice | ✅ Merged ([apps#54](https://github.com/ellisandy/NakedPantree/pull/54)) |
 
 ---
 
