@@ -896,7 +896,15 @@ role:
 | --- | --- |
 | `APP_STORE_CONNECT_API_KEY_ID` | Short identifier from the API key page (e.g. `ABCD1234EF`). |
 | `APP_STORE_CONNECT_API_ISSUER_ID` | UUID at the top of the **Users and Access → Keys** tab. |
-| `APP_STORE_CONNECT_API_KEY` | The downloaded `.p8` file, base64-encoded. Generate with `base64 -i AuthKey_*.p8 \| pbcopy` and paste as the secret value. |
+| `APP_STORE_CONNECT_API_KEY` | The downloaded `.p8` file. Either paste the file contents directly (`pbpaste < AuthKey_*.p8`) or its base64 encoding (`base64 -i AuthKey_*.p8 \| pbcopy`) — the workflow detects which one and acts accordingly. |
+
+> **Wrong key type is the #1 setup gotcha.** Apple has multiple `.p8`
+> formats: APNs keys, in-app purchase keys, App Store Connect API
+> keys. They look identical (PEM-formatted EC private keys, ~250
+> bytes) but only the **App Store Connect API key** signs JWTs for
+> TestFlight upload. Generate it at
+> https://appstoreconnect.apple.com/access/api with the
+> **App Manager** role.
 
 Code-signing certificates and provisioning profiles are **not** stored
 as secrets — `xcodebuild -allowProvisioningUpdates` regenerates them
