@@ -896,7 +896,12 @@ role:
 | --- | --- |
 | `APP_STORE_CONNECT_API_KEY_ID` | Short identifier from the API key page (e.g. `ABCD1234EF`). |
 | `APP_STORE_CONNECT_API_ISSUER_ID` | UUID at the top of the **Users and Access → Keys** tab. |
-| `APP_STORE_CONNECT_API_KEY` | The downloaded `.p8` file. Either paste the file contents directly (`pbpaste < AuthKey_*.p8`) or its base64 encoding (`base64 -i AuthKey_*.p8 \| pbcopy`) — the workflow detects which one and acts accordingly. |
+| `APP_STORE_CONNECT_API_KEY` | The downloaded `.p8` file. Either paste the file contents directly (`pbcopy < AuthKey_*.p8`) or its base64 encoding (`base64 -i AuthKey_*.p8 \| pbcopy`) — the workflow detects which one and acts accordingly. |
+
+The 10-character Apple **Team ID** isn't a secret — it appears
+publicly on App Store listings — so it's hardcoded in `project.yml`
+(`DEVELOPMENT_TEAM: …`) and `testflight-beta.yml`'s
+`exportOptions.plist`. Update both if Apple ever reissues the team.
 
 > **Wrong key type is the #1 setup gotcha.** Apple has multiple `.p8`
 > formats: APNs keys, in-app purchase keys, App Store Connect API
