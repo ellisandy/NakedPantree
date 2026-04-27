@@ -335,6 +335,32 @@ struct ItemRepositoryContractTests {
     }
 
     @Test(
+        "search returns matches from every location in the household",
+        arguments: RepositoryFactory.all)
+    func searchSpansAllLocations(factory: RepositoryFactory) async throws {
+        // Phase 6.2b acceptance: the sidebar search surface filters
+        // across every location in the household. The repository call
+        // is the same `search(_:in:)` AllItemsView used; this test
+        // pins the cross-location guarantee that surface depends on.
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let itemRepo = bundle.item
+        let house = try await household.currentHousehold()
+        let pantry = Location(householdID: house.id, name: "Kitchen Pantry")
+        let freezer = Location(householdID: house.id, name: "Garage Freezer", kind: .freezer)
+        try await locationRepo.create(pantry)
+        try await locationRepo.create(freezer)
+
+        try await itemRepo.create(Item(locationID: pantry.id, name: "Pantry Tomatoes"))
+        try await itemRepo.create(Item(locationID: freezer.id, name: "Freezer Tomatoes"))
+        try await itemRepo.create(Item(locationID: pantry.id, name: "Bread"))
+
+        let hits = try await itemRepo.search("tomato", in: house.id)
+        #expect(Set(hits.map(\.name)) == ["Pantry Tomatoes", "Freezer Tomatoes"])
+    }
+
+    @Test(
         "search is scoped to the household, not the location",
         arguments: RepositoryFactory.all)
     func searchScopedToHousehold(factory: RepositoryFactory) async throws {
