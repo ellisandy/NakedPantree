@@ -436,10 +436,21 @@ chrome, no "+1 more" affordance for a single image.
 
 - Single iOS app target. `iPad` is added to "Supported Destinations." "Mac
   (Designed for iPad)" is enabled.
-- **Xcode Cloud** runs on every PR (build + tests) and on merges to `main`
-  (TestFlight beta upload, internal group).
-- GitHub Actions is reserved for lint and `swift-format` checks that don't
-  need an Xcode runner.
+- **GitHub Actions** runs every PR (`build-test.yml`: build + tests on the
+  iPhone simulator; `lint.yml`: swift-format + swiftlint) and runs the
+  TestFlight beta upload (`testflight-beta.yml`) on each merge to `main`.
+  All on `macos-26` runners. Single CI surface, single set of logs.
+- TestFlight upload uses the App Store Connect API key for both signing
+  (via `xcodebuild -allowProvisioningUpdates -authenticationKey*` flags)
+  and `xcrun altool --upload-app`. Three repo secrets:
+  `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_API_ISSUER_ID`,
+  `APP_STORE_CONNECT_API_KEY` (base64-encoded `.p8`). No certificates
+  or provisioning profiles are stored as secrets — Xcode regenerates
+  them via the API key per build.
+- Build number (`CFBundleVersion`) is overridden to `$GITHUB_RUN_NUMBER`
+  at archive time, keeping it monotonic without committing back to the
+  repo. Marketing version (`CFBundleShortVersionString`) is bumped by
+  hand at milestone boundaries.
 - Versioned Core Data model from day one (`Model.xcdatamodeld` with a `v1`
   version inside). Lightweight migration enabled. CloudKit schema changes
   are deployed to Production via the CloudKit Console after the dev schema

@@ -337,12 +337,17 @@ household-shaped.
 
 **In scope**
 
-- Xcode Cloud workflows: PR check (build + tests) and beta
-  (build + tests + archive + upload).
-- TestFlight internal group provisioned in App Store Connect.
+- GitHub Actions workflows: existing `build-test.yml` (PR check, already
+  lands) and a new `testflight-beta.yml` (archive + TestFlight upload on
+  merge to `main`). One CI surface. See `ARCHITECTURE.md` §10 for the
+  signing / API-key shape.
+- App Store Connect record + TestFlight internal group + default metadata
+  stub (name, bundle id, screenshots).
+- Three repo secrets for the TestFlight upload:
+  `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_API_ISSUER_ID`,
+  `APP_STORE_CONNECT_API_KEY`.
 - CloudKit schema **deployed to Production** (the gate from
   `DEVELOPMENT.md` §6).
-- App Store Connect metadata stub — name, bundle id, default screenshots.
 - Final manual QA pass against the full checklist
   (`ARCHITECTURE.md` §11).
 - `DEVELOPMENT.md` Release section + Troubleshooting section filled in
@@ -363,25 +368,26 @@ household-shaped.
 
 **Sub-milestones**
 
-Phase 7 is mostly Apple-web-UI work — Xcode Cloud workflows, App Store
-Connect, CloudKit Console — that the agent can't drive directly. The
-**Owner** column is the split: `user` rows happen in Apple's web tools
-(no PR); `agent` rows are doc / config edits that follow once the user
-reports back.
+CI moved from Xcode Cloud to GitHub Actions (single platform, already
+pays for the runner). 7.1 flips from `user`-owned to `agent`-owned —
+workflow YAML lives in the repo. The remaining rows are still
+Apple-web-UI work the agent can't drive: App Store Connect provisioning,
+the production CloudKit schema deploy, and the manual checklist that
+needs two real iCloud accounts. The **Owner** column makes the split
+visible.
 
 | # | Title | Owner | Status |
 | --- | --- | --- | --- |
-| 7.1 | Xcode Cloud workflows: PR check (build + tests) and `main`-merge beta (build + tests + archive + TestFlight upload) | user | ⏳ Pending |
-| 7.2 | App Store Connect record + TestFlight internal group + default metadata stub (name, bundle id, screenshots) | user | ⏳ Pending |
-| 7.3 | First TestFlight beta build that exercises every field of the dev CloudKit schema (gates 7.4) | user | ⏳ Pending |
+| 7.1 | `.github/workflows/testflight-beta.yml` — archive + TestFlight upload via App Store Connect API key on every `main` merge | agent | 🟡 In review |
+| 7.2 | App Store Connect record + TestFlight internal group + default metadata stub (name, bundle id, screenshots) + repo secrets (`APP_STORE_CONNECT_API_KEY_ID`, `..._ISSUER_ID`, `..._API_KEY`) | user | ⏳ Pending |
+| 7.3 | First green TestFlight upload from `main` that exercises every field of the dev CloudKit schema (gates 7.4) | user | ⏳ Pending |
 | 7.4 | CloudKit Production schema deploy via the CloudKit Console — one-way ratchet, must follow 7.3 | user | ⏳ Pending |
 | 7.5 | Manual QA pass against `ARCHITECTURE.md` §11 checklist on iPhone, iPad, and Mac (Designed for iPad) — internal-group install, end-to-end | user | ⏳ Pending |
-| 7.6 | `DEVELOPMENT.md` §6 (Release) and §7 (Troubleshooting) fill-ins — workflow names, real failure modes that surface during 7.1–7.5 | agent | ⏳ Pending |
+| 7.6 | `DEVELOPMENT.md` §6 (Release) and §7 (Troubleshooting) fill-ins — real failure modes that surface during 7.1–7.5 | agent | ⏳ Pending |
 
 > 7.6 lands as a series of small doc PRs threaded through the rest —
-> not a one-shot at the end. The TODO blocks in §6 / §7 come out as
-> the user lands each step and reports what the names / failure modes
-> actually were.
+> not a one-shot at the end. The §6 / §7 TODO blocks come out as the
+> user lands each step and reports back what surfaced.
 
 ---
 

@@ -1,0 +1,139 @@
+name: TestFlight Beta
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/*.swift"
+      - "Packages/**"
+      - "NakedPantreeApp/**"
+      - "project.yml"
+      - ".github/workflows/testflight-beta.yml"
+      - "ci_scripts/**"
+  workflow_dispatch:
+
+# Don't cancel an in-flight upload if a second push lands — TestFlight
+# rejects mid-upload aborts and we'd burn a build number for nothing.
+concurrency:
+  group: testflight-beta-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  archive-and-upload:
+    name: Archive & TestFlight upload
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain versions
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      # The .p8 stays on the runner only for this job. The well-known
+      # path lets `xcodebuild -authenticationKeyPath` and
+      # `xcrun altool --apiKey` find it without surfacing the secret
+      # in command lines.
+      - name: Decode App Store Connect API key
+        env:
+          API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.appstoreconnect/private_keys
+          KEY_PATH=~/.appstoreconnect/private_keys/AuthKey_$API_KEY_ID.p8
+          printf '%s' "$API_KEY_BASE64" | base64 -d > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+
+      # `CURRENT_PROJECT_VERSION` overrides `CFBundleVersion` (build
+      # number) at archive time. TestFlight requires a strictly
+      # increasing build number per marketing version; deriving from
+      # `GITHUB_RUN_NUMBER` keeps it monotonic without committing
+      # back to the repo. Marketing version (`CFBundleShortVersionString`)
+      # stays at whatever Info.plist holds — bump that by hand when
+      # the milestone changes.
+      - name: Archive
+        env:
+          API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project NakedPantree.xcodeproj \
+            -scheme NakedPantree \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/NakedPantree.xcarchive \
+            -skipPackagePluginValidation \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_$API_KEY_ID.p8 \
+            -authenticationKeyID "$API_KEY_ID" \
+            -authenticationKeyIssuerID "$API_ISSUER_ID" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
+
+      # `app-store-connect` is the modern method name; older Xcode
+      # called it `app-store`. `signingStyle = automatic` lets Xcode
+      # fetch / regenerate provisioning profiles via the API key —
+      # avoids storing certs and profiles as repo secrets.
+      - name: Write export options
+        run: |
+          mkdir -p build
+          cat > build/exportOptions.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>uploadSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Export IPA
+        env:
+          API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+        run: |
+          set -o pipefail
+          xcodebuild -exportArchive \
+            -archivePath build/NakedPantree.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist build/exportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_$API_KEY_ID.p8 \
+            -authenticationKeyID "$API_KEY_ID" \
+            -authenticationKeyIssuerID "$API_ISSUER_ID"
+
+      - name: Upload to TestFlight
+        env:
+          API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          IPA=$(find build/export -name '*.ipa' | head -n1)
+          [ -n "$IPA" ] || { echo "No .ipa produced"; exit 1; }
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$IPA" \
+            --apiKey "$API_KEY_ID" \
+            --apiIssuer "$API_ISSUER_ID"
+
+      - name: Upload archive on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NakedPantree.xcarchive
+          path: build/NakedPantree.xcarchive
+          if-no-files-found: ignore
