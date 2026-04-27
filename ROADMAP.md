@@ -317,6 +317,15 @@ household-shaped.
 - [ ] Empty states across the app pass voice rules and use icon + text
       (never color alone).
 
+**Sub-milestones**
+
+| # | Title | Status |
+| --- | --- | --- |
+| 6.1 | `ExpiringSoonView` (cross-location, sorted by expiry) + restore §8 missing-item routing | 🟡 In review |
+| 6.2 | Recently Added smart list + sidebar search surface | ⏳ Pending |
+| 6.3 | iPad / Mac (Designed for iPad) verification + `DEVELOPMENT.md` §5e runbook | ⏳ Pending |
+| 6.4 | Empty-state copy pass with brand voice | ⏳ Pending |
+
 ---
 
 ## Phase 7 — Pre-TestFlight hardening

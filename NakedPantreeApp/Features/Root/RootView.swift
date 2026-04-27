@@ -113,17 +113,15 @@ struct RootView: View {
     }
 
     /// Resolves a notification-tap deep link. Sets the sidebar to the
-    /// item's location and selects the item, or shows the
-    /// "That item is gone." alert if the item has been deleted (e.g.
-    /// remote household member tossed it before the tap landed).
-    ///
-    /// Per ARCHITECTURE.md §8 the missing-item case should land on the
-    /// Expiring Soon smart list. That list is stubbed until Phase 6, so
-    /// the interim is a deselect + alert in place. The §8 note records
-    /// the divergence; revisit when Smart Lists ship.
+    /// item's location and selects the item; if the item has been
+    /// deleted (e.g. another household member tossed it before the
+    /// tap landed) lands on the Expiring Soon smart list and shows
+    /// the "That item is gone." alert per `ARCHITECTURE.md` §8.
     private func applyDeepLink(itemID: Item.ID) async {
         do {
             guard let item = try await repositories.item.item(id: itemID) else {
+                sidebarSelection = .smartList(.expiringSoon)
+                selectedItemID = nil
                 isShowingMissingItemAlert = true
                 return
             }

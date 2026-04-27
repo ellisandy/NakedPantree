@@ -362,13 +362,6 @@ app to the corresponding `Item` detail via the navigation state's
 - If the app is launched cold from the notification, the routing is applied
   after the persistent store loads, not during onboarding.
 
-**Phase 4.2 interim:** Expiring Soon is stubbed until Phase 6, so routing
-to it on a missing item lands on a placeholder that has nothing to do with
-the deleted item — worse than no navigation at all. Until Smart Lists ship,
-the missing-item case shows the "That item is gone." copy as a one-shot
-alert in place and leaves the user on whatever surface they were viewing.
-Restore the Expiring Soon hand-off when Phase 6 lands the real list.
-
 ### Multi-device behavior
 
 If two household members both have the app installed, both phones will fire

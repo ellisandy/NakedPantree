@@ -90,9 +90,11 @@ struct ItemsView: View {
         switch list {
         case .allItems:
             AllItemsView(selectedItemID: $selectedItemID)
-        case .expiringSoon, .recentlyAdded:
-            // Projections (Expiring Soon, Recently Added) land with the
-            // Smart Lists feature in Phase 6.
+        case .expiringSoon:
+            ExpiringSoonView(selectedItemID: $selectedItemID)
+        case .recentlyAdded:
+            // Recently Added is the remaining Smart List projection
+            // — pending its own Phase 6 sub-milestone.
             ContentUnavailableView(
                 list.title,
                 systemImage: list.systemImage,
