@@ -937,14 +937,96 @@ ship a build that can't sync.
 
 ## 7. Troubleshooting
 
-> **TODO (filled in opportunistically):** add entries here as we hit and
-> resolve issues. Expected starting set:
->
-> - "iCloud account required" at launch despite being signed in.
-> - CloudKit "schema not deployed" after adding a field.
-> - Share invitation never arrives (Messages vs. Mail vs. AirDrop).
-> - `NSPersistentStoreRemoteChange` not firing on the second device.
-> - Mac build (Designed for iPad) crashes at launch.
+Each entry follows the format **Symptom → Root cause → Fix.** No
+folklore — entries land here when a real failure mode resolves. The
+TestFlight rollout (Phase 7.1) seeded the first three.
 
-Each entry should follow the format: **Symptom → Root cause → Fix.** No
-folklore.
+### `testflight-beta.yml` exits with `keyPathInvalid` on the archive step
+
+**Symptom.** The archive step fails fast with:
+
+```
+xcodebuild: error: Invalid authentication key credential specified
+(DVTFoundation.JWT.Error.keyPathInvalid("/Users/runner/.appstoreconnect/private_keys/AuthKey_***.p8"))
+```
+
+The decode step itself reports `success`, so `base64 -d` ran without
+complaining — but xcodebuild can't parse the resulting file as an EC
+private key.
+
+**Root cause.** The `APP_STORE_CONNECT_API_KEY` secret value isn't a
+real `.p8` private key. The most common variants:
+
+- The secret holds an **APNs Authentication Key**, an **In-App
+  Purchase key**, or another `.p8` from `developer.apple.com` — they
+  look identical but aren't App Store Connect API keys and won't sign
+  the JWT App Store Connect expects. Only **App Store Connect API
+  keys** generated at <https://appstoreconnect.apple.com/access/api>
+  work.
+- The secret holds the literal `.p8` text but the workflow's pre-
+  hardening behavior tried to base64-decode it, producing garbage.
+  (The current workflow accepts both raw PEM and base64.)
+
+**Fix.** Regenerate the API key at
+<https://appstoreconnect.apple.com/access/api> with **App Manager**
+or **Admin** role, download the `.p8`, and overwrite the secret with
+either the file's text contents (`pbcopy < AuthKey_*.p8`) or its
+base64 encoding. The hardened decode step in
+`.github/workflows/testflight-beta.yml` validates size + PEM header
+before xcodebuild gets to it, so a clean error annotation will point
+at this secret if it's still wrong.
+
+### `testflight-beta.yml` exits with "Signing requires a development team"
+
+**Symptom.** Archive fails at project-load with:
+
+```
+error: Signing for "NakedPantree" requires a development team.
+Select a development team in the Signing & Capabilities editor.
+```
+
+`-allowProvisioningUpdates` doesn't reach Apple before this fires.
+
+**Root cause.** xcodebuild reads `DEVELOPMENT_TEAM` at project-load
+to decide which team to ask Apple about. `project.yml` shipped with
+`DEVELOPMENT_TEAM: ""` because local Xcode falls back to the
+signed-in Apple ID — CI has no signed-in user.
+
+**Fix.** Set `DEVELOPMENT_TEAM` to the 10-character team id under
+`settings.base` in `project.yml`. The team id is public (visible on
+every App Store listing), so hardcoding it is fine. If Apple
+reissues the team, also update the `teamID` value in the
+`Write export options` step of `testflight-beta.yml`.
+
+### `testflight-beta.yml` exits with "Cloud signing permission error" on Export IPA
+
+**Symptom.** Archive succeeds; Export IPA fails with:
+
+```
+error: exportArchive Cloud signing permission error
+error: exportArchive No profiles for 'cc.mnmlst.nakedpantree' were found
+```
+
+Even when the App ID exists at `developer.apple.com`, has Push
+Notifications + iCloud capabilities + the right container, *and*
+an Apple Distribution Managed certificate is visible on the team's
+Certificates page.
+
+**Root cause.** The App Store Connect API key role is **App
+Manager**. App Manager can use existing Distribution certificates
+*and* create Development profiles, but it can't reliably mint a
+new App Store provisioning profile via `-allowProvisioningUpdates`
+when the only available distribution cert is **Distribution
+Managed** (Apple's cloud-managed kind). The cloud-managed cert is
+also not selectable in the manual *Generate a profile* wizard, so
+the workaround of creating the profile by hand only works after
+also creating a separate CSR-based Apple Distribution cert.
+
+**Fix.** Edit the API key at
+<https://appstoreconnect.apple.com/access/api> → role drop-down →
+**Admin**. The existing `.p8` stays valid; the secret doesn't need
+re-uploading (though if Apple's flow forces a key reissue,
+`gh secret list` will show new timestamps and that's expected).
+On the next run, `-allowProvisioningUpdates` will mint the profile
+on the fly and the Export IPA + Upload to TestFlight steps both
+succeed.
