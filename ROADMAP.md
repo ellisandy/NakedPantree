@@ -272,6 +272,21 @@ household.
 > critical path to "track inventory across two phones." Don't defer
 > casually — it's a bait for Phase 7.
 
+**Sub-milestones**
+
+| # | Title | Status |
+| --- | --- | --- |
+| 5.1 | App-layer image pipeline (`ImageIO` resize + thumbnail, EXIF-correct) | 🟡 In review |
+| 5.2 | `PhotosPicker` + camera bridge + primary-photo header in `ItemDetailView` | ⏳ Pending |
+| 5.3 | Secondary photo strip + full-screen pager + reorder/delete-promotes-next | ⏳ Pending |
+| 5.4 | Two-device sync verification + dev schema deploy + `DEVELOPMENT.md` §5d runbook | ⏳ Pending |
+
+**Persistence layer status (sanity check, not a sub-milestone):** the
+`ItemPhoto` Core Data entity, repository protocol/impl, and CRUD tests
+all landed in Phase 1.2b — Phase 5 is pure UI + image-processing work.
+The CloudKit dev-schema record type for `CD_ItemPhotoEntity` is created
+lazily on the first photo write per `DEVELOPMENT.md` §5a step 4.
+
 ---
 
 ## Phase 6 — Cross-household views and adaptive polish
