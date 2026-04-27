@@ -85,11 +85,15 @@ struct NakedPantreeApp: App {
             // invite. The delegate is instantiated by the system before
             // this init runs, so a static var is the simplest seam.
             NakedPantreeAppDelegate.shareAcceptance = CloudShareAcceptance(container: container)
-            notificationScheduler = NotificationScheduler(center: .current())
-            // Phase 9.3: persisted reminder time. Real `UserDefaults`
-            // here so the picker round-trips across launches; the test
-            // / preview branches above stay on the in-memory no-op.
+            // Phase 9.3: persisted reminder time, constructed before
+            // the scheduler so it can read `settings.hourOfDay` /
+            // `.minute` when scheduling and when bundling same-day
+            // expiries (Phase 9.4 integration).
             notificationSettings = NotificationSettings(defaults: .standard)
+            notificationScheduler = NotificationScheduler(
+                center: .current(),
+                settings: notificationSettings
+            )
         }
         // Phase 4.2: the delegate routes notification taps into this
         // service. Same static-var pattern as `shareAcceptance` —
