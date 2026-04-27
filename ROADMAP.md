@@ -361,6 +361,28 @@ household-shaped.
 - [ ] The full manual checklist passes on iPhone, iPad, and Mac.
 - [ ] CloudKit Production schema matches Development schema exactly.
 
+**Sub-milestones**
+
+Phase 7 is mostly Apple-web-UI work — Xcode Cloud workflows, App Store
+Connect, CloudKit Console — that the agent can't drive directly. The
+**Owner** column is the split: `user` rows happen in Apple's web tools
+(no PR); `agent` rows are doc / config edits that follow once the user
+reports back.
+
+| # | Title | Owner | Status |
+| --- | --- | --- | --- |
+| 7.1 | Xcode Cloud workflows: PR check (build + tests) and `main`-merge beta (build + tests + archive + TestFlight upload) | user | ⏳ Pending |
+| 7.2 | App Store Connect record + TestFlight internal group + default metadata stub (name, bundle id, screenshots) | user | ⏳ Pending |
+| 7.3 | First TestFlight beta build that exercises every field of the dev CloudKit schema (gates 7.4) | user | ⏳ Pending |
+| 7.4 | CloudKit Production schema deploy via the CloudKit Console — one-way ratchet, must follow 7.3 | user | ⏳ Pending |
+| 7.5 | Manual QA pass against `ARCHITECTURE.md` §11 checklist on iPhone, iPad, and Mac (Designed for iPad) — internal-group install, end-to-end | user | ⏳ Pending |
+| 7.6 | `DEVELOPMENT.md` §6 (Release) and §7 (Troubleshooting) fill-ins — workflow names, real failure modes that surface during 7.1–7.5 | agent | ⏳ Pending |
+
+> 7.6 lands as a series of small doc PRs threaded through the rest —
+> not a one-shot at the end. The TODO blocks in §6 / §7 come out as
+> the user lands each step and reports what the names / failure modes
+> actually were.
+
 ---
 
 ## After TestFlight
