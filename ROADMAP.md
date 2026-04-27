@@ -159,9 +159,9 @@ The phase is large enough to land in chunks. Each row tracks one PR.
 
 ---
 
-## Phase 3 — Sharing across households 🟡
+## Phase 3 — Sharing across households ✅
 
-**Status:** In progress.
+**Status:** Complete (verified on real devices, see sub-milestones below).
 
 **Goal:** two different iCloud accounts can collaborate on one
 household.
@@ -185,10 +185,10 @@ household.
 
 **Exit criteria**
 
-- [ ] Two devices on different iCloud accounts can both see and edit the
+- [x] Two devices on different iCloud accounts can both see and edit the
       same household after share acceptance.
-- [ ] Removing a participant removes their access on the next launch.
-- [ ] Manual checklist (`ARCHITECTURE.md` §11) entries 1–3 all pass.
+- [x] Removing a participant removes their access on the next launch.
+- [x] Manual checklist (`ARCHITECTURE.md` §11) entries 1–3 all pass.
 
 **Sub-milestones**
 
