@@ -93,13 +93,7 @@ struct ItemsView: View {
         case .expiringSoon:
             ExpiringSoonView(selectedItemID: $selectedItemID)
         case .recentlyAdded:
-            // Recently Added is the remaining Smart List projection
-            // — pending its own Phase 6 sub-milestone.
-            ContentUnavailableView(
-                list.title,
-                systemImage: list.systemImage,
-                description: Text("Coming with Smart Lists.")
-            )
+            RecentlyAddedView(selectedItemID: $selectedItemID)
         }
     }
 
