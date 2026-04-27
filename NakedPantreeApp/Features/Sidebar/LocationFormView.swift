@@ -51,7 +51,9 @@ struct LocationFormView: View {
 
                 if let saveError {
                     Section {
-                        Text(saveError)
+                        // Icon + text per `DESIGN_GUIDELINES.md` §10 /
+                        // Phase 6 exit criterion — never color alone.
+                        Label(saveError, systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(.red)
                     }
                 }

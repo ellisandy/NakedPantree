@@ -28,7 +28,11 @@ struct SidebarView: View {
 
             Section("Locations") {
                 if locations.isEmpty {
-                    Text("No locations yet. Tap + to add one.")
+                    // Phase 6.4: icon + text for the empty-state row so
+                    // the sidebar matches the rest of the app's empty-
+                    // state pattern (`DESIGN_GUIDELINES.md` §10 / Phase 6
+                    // exit criterion).
+                    Label("No locations yet. Tap + to add one.", systemImage: "tray")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
