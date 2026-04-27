@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Naked Pantree privacy manifest.
+
+        Source-of-truth rationale for every key here is in
+        docs/app-store-privacy.md (§5 covers the required-reason API
+        accounting; §3 covers the App Privacy questionnaire). Keep
+        this file in sync with that document — if a new third-party
+        SDK, analytics pipeline, or required-reason API ever lands in
+        the codebase, both this manifest and that doc need updating.
+    -->
+
+    <!-- §3 Q1 / §3 Q17 / §4: zero tracking, zero data collection. -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+
+    <!--
+        §5: required-reason API declarations. The only category we
+        currently use is UserDefaults, via
+        NakedPantreeApp/Notifications/NotificationSettings.swift —
+        the per-device notification reminder time is read and
+        written under the `settings.notifications.reminderHour` /
+        `settings.notifications.reminderMinute` keys. Reason code
+        CA92.1 ("Access info from same app") matches that usage
+        exactly: the data is strictly first-party and accessible
+        only to this app.
+    -->
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>CA92.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>
