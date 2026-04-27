@@ -643,9 +643,10 @@ upload without drafts.
 | 11.1a | App Store listing copy — name, subtitle, description, keywords, age rating, category (`docs/app-store-listing.md`) | agent | ✅ Merged ([apps#78](https://github.com/ellisandy/NakedPantree/pull/78)) |
 | 11.1b | App Privacy questionnaire answers + `PrivacyInfo.xcprivacy` plist plan (`docs/app-store-privacy.md`) | agent | ✅ Merged ([apps#78](https://github.com/ellisandy/NakedPantree/pull/78)) |
 | 11.1c | App Store screenshots per device family (run / extend the existing `SnapshotsUITests` pipeline to produce App-Store-spec sizes) | agent | ⏳ Deferred — produced near submission time when the human is doing the App Store Connect upload anyway |
+| 11.1d | Ship `PrivacyInfo.xcprivacy` manifest (the code-side follow-up flagged in 11.1b §5 / §8) — `UserDefaults` reason `CA92.1`, empty `NSPrivacyCollectedDataTypes`, `NSPrivacyTracking=false` | agent | 🟡 In review |
 | 11.2 | App Store Connect record setup — paste 11.1a metadata, fill 11.1b privacy answers, upload 11.1c screenshots, set age rating / category / regions, choose pricing (free, all countries) | user | ⏳ Pending |
 | 11.3 | Final manual QA pass against `ARCHITECTURE.md §11` — two iCloud accounts, two devices, real iPhone + iPad + Mac (Designed for iPad). Sweeps up the still-pending real-device verification owed by Phases 8.2 / 8.3 / 9.{1..4} / 10.{1..4} | user | ⏳ Pending |
-| 11.4 | App Store submission + review iteration — ship the `PrivacyInfo.xcprivacy` flagged in 11.1b, submit, respond to Apple Review feedback, ship code-side fixes if Apple flags anything | hybrid | ⏳ Pending |
+| 11.4 | App Store submission + review iteration — submit, respond to Apple Review feedback, ship code-side fixes if Apple flags anything (privacy manifest already shipped in 11.1d) | hybrid | ⏳ Pending |
 | 11.5 | Release docs + retrospective — `DEVELOPMENT.md §6 / §7` final fills, ROADMAP close, tag `phase-11`, README version bump | agent | ⏳ Pending |
 
 > 11.1's three sub-pieces ran in parallel agent worktrees alongside

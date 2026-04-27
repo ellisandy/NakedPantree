@@ -35,6 +35,7 @@ targets:
           - "**/*.md"
     resources:
       - path: NakedPantreeApp/Resources/Assets.xcassets
+      - path: NakedPantreeApp/Resources/PrivacyInfo.xcprivacy
     dependencies:
       - package: Core
         product: NakedPantreeDomain
