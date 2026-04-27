@@ -20,6 +20,21 @@
     <string>0.1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <!--
+        Standard export-compliance exemption: Naked Pantree uses only
+        Apple-provided system encryption (HTTPS via URLSession,
+        CloudKit / Core Data at-rest encryption, Keychain). No
+        third-party crypto libraries, no custom cryptography, no
+        end-to-end encryption layered on top of the platform.
+        Verified by tree grep — no `CryptoKit` / `CommonCrypto` /
+        `Security` imports and zero third-party SwiftPM dependencies
+        (see Packages/Core/Package.swift). Declaring `false` here
+        skips App Store Connect's per-upload export-compliance
+        questionnaire. Re-evaluate if the app ever adds bundled
+        OpenSSL / libsodium / custom AES / etc.
+    -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>NSCameraUsageDescription</key>
