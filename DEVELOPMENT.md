@@ -85,30 +85,68 @@ xcodebuild build \
     -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest'
 ```
 
-#### Dev build vs TestFlight build — same bundle id, different CloudKit environments
+#### Dev build vs TestFlight build — separate bundle ids, separate CloudKit containers
 
-Both builds use bundle id `cc.mnmlst.nakedpantree` and CloudKit
-container `iCloud.cc.mnmlst.nakedpantree`, but they hit **different
-environments inside that container**:
+The two configurations now ship as distinct app installs so a
+developer can keep both on the same device at the same time:
 
-- **Local Xcode build** (Cmd-R against a real device or simulator) is
-  Development-signed — `aps-environment` stays `development` and
-  CloudKit reads/writes the **Development** environment of the
-  container.
-- **TestFlight build** is Distribution-signed — Apple's signing flow
-  flips `aps-environment` to `production` and CloudKit reads/writes
-  the **Production** environment.
+| Aspect | Debug (local Xcode build) | Release (TestFlight / App Store) |
+| --- | --- | --- |
+| Bundle id | `cc.mnmlst.nakedpantree.dev` | `cc.mnmlst.nakedpantree` |
+| Display name | "Pantree Dev" | "Naked Pantree" |
+| iCloud container | `iCloud.cc.mnmlst.nakedpantree.dev` | `iCloud.cc.mnmlst.nakedpantree` |
+| Entitlements file | `NakedPantreeApp/Resources/NakedPantreeDev.entitlements` | `NakedPantreeApp/Resources/NakedPantree.entitlements` |
+| Signing | Development (Xcode automatic) — `aps-environment = development` | Distribution (App Store) — Apple flips `aps-environment` to `production` at archive time |
+| CloudKit environment | Development environment of the dev container | Production environment of the prod container |
 
-The two environments don't share data. A developer who installs the
-TestFlight build over their local dev build (or vice versa) will see
-the *other* environment's data appear after sync — that's expected,
-not a bug.
+Because the two installs use different bundle ids, the dev build and
+the TestFlight build can coexist on a device — installing one no
+longer replaces the other. The two CloudKit containers are fully
+isolated, so dev-only test data never bleeds into production records.
 
-Because both builds share the bundle id, **only one can be installed
-on a device at a time** — TestFlight install replaces the local dev
-build and vice versa. Side-by-side coexistence (separate bundle id +
-container for dev, e.g. `cc.mnmlst.nakedpantree.dev`) is tracked
-separately; see related issues in the post-Phase-7 backlog.
+> **Heads-up: this requires Apple Developer portal setup the repo
+> can't do for you.** Until the steps below are done, the dev build
+> will fail to sign / push notifications won't register / CloudKit
+> calls will return "container not found". The same gating pattern
+> Phase 7.1 had against the App Store Connect work in Phase 7.2.
+
+##### One-time portal work (per Apple ID with the team membership)
+
+1. <https://developer.apple.com/account/resources/identifiers/list> →
+   register a new App ID:
+   - Bundle ID (Explicit): `cc.mnmlst.nakedpantree.dev`
+   - Description: `Naked Pantree (Dev)` (or similar)
+   - Capabilities: enable **iCloud** (with CloudKit support) and
+     **Push Notifications** to mirror the production App ID.
+2. <https://developer.apple.com/account/resources/icloudcontainers/list>
+   → create a new iCloud container:
+   - Identifier: `iCloud.cc.mnmlst.nakedpantree.dev`
+   - Description: `Naked Pantree Dev`
+3. Back on the dev App ID's iCloud capability, **assign** the new
+   `iCloud.cc.mnmlst.nakedpantree.dev` container to it. Save.
+4. (Optional) push the dev container's schema once: open the CloudKit
+   Console for `iCloud.cc.mnmlst.nakedpantree.dev`, run the dev build
+   on a device once so Core Data + CloudKit auto-creates the schema
+   in Development, then promote that schema if you want a clean
+   reset surface for QA. Most of the time the auto-created Dev
+   schema is enough — see §5a.
+
+##### After the portal work is done
+
+```bash
+xcodegen generate
+# Open NakedPantree.xcodeproj, pick a real device, Cmd-R.
+```
+
+Xcode's automatic signing will fetch / regenerate a provisioning
+profile for `cc.mnmlst.nakedpantree.dev` against the new container,
+and "Pantree Dev" lands on the home screen alongside any existing
+"Naked Pantree" TestFlight install.
+
+> The icon hasn't been visually differentiated yet — they currently
+> share `AppIcon`. Display name + bundle id is enough to tell them
+> apart in Spotlight and the app switcher; a separate `AppIconDev`
+> asset catalog is a nice-to-have follow-up.
 
 ### Test
 
