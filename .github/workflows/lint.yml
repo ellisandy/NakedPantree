@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     container: swift:6.0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Run swift-format lint
         run: swift-format lint --recursive --strict --parallel .
 
@@ -29,6 +29,6 @@ jobs:
     runs-on: ubuntu-latest
     container: ghcr.io/realm/swiftlint:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Run swiftlint
         run: swiftlint lint --strict --reporter github-actions-logging

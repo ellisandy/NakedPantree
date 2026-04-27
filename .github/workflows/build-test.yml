@@ -24,7 +24,7 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Show toolchain versions
         run: |
           xcodebuild -version
@@ -39,7 +39,7 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Show toolchain versions
         run: |
           xcodebuild -version
@@ -64,7 +64,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
       - name: Upload xcresult on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TestResults.xcresult
           path: TestResults.xcresult
