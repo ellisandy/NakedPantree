@@ -376,6 +376,11 @@ internal-group install round-trips against production CloudKit.
   arrives. Eventually-consistent (`fetchHouseholdRow` sorts oldest-first
   so devices converge) but items added during the gap orphan. Must fix
   before App Store release.
+- [#68](https://github.com/ellisandy/NakedPantree/issues/68) — local
+  dev build and TestFlight build share bundle id `cc.mnmlst.nakedpantree`
+  so they can't be installed side-by-side on the same device. Affects
+  developer ergonomics only; no user-visible bug. Nice-to-have for
+  post-Phase-7.
 
 **Sub-milestones**
 
