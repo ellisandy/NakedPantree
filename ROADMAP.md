@@ -619,9 +619,31 @@ run dev + TestFlight side-by-side.
 
 **Sub-milestones**
 
-> Sub-milestones land as the work happens. Expected starting set:
-> metadata, screenshots, privacy nutrition label, submission. Filled
-> in opportunistically per the same pattern §7 followed.
+Phase 11 is mostly user-driven (App Store Connect web UI + Apple
+Review), with the agent prepping inputs and threading docs. Closer
+to Phase 7's shape than to the parallel-worktrees workflow Phases
+9–10 used. Hard sequential dependencies between rows: can't submit
+without QA passing, can't QA without materials uploaded, can't
+upload without drafts.
+
+| # | Title | Owner | Status |
+| --- | --- | --- | --- |
+| 11.1a | App Store listing copy — name, subtitle, description, keywords, age rating, category (`docs/app-store-listing.md`) | agent | 🟡 In review |
+| 11.1b | App Privacy questionnaire answers + `PrivacyInfo.xcprivacy` plist plan (`docs/app-store-privacy.md`) | agent | 🟡 In review |
+| 11.1c | App Store screenshots per device family (run / extend the existing `SnapshotsUITests` pipeline to produce App-Store-spec sizes) | agent | ⏳ Deferred — produced near submission time when the human is doing the App Store Connect upload anyway |
+| 11.2 | App Store Connect record setup — paste 11.1a metadata, fill 11.1b privacy answers, upload 11.1c screenshots, set age rating / category / regions, choose pricing (free, all countries) | user | ⏳ Pending |
+| 11.3 | Final manual QA pass against `ARCHITECTURE.md §11` — two iCloud accounts, two devices, real iPhone + iPad + Mac (Designed for iPad). Sweeps up the still-pending real-device verification owed by Phases 8.2 / 8.3 / 9.{1..4} / 10.{1..4} | user | ⏳ Pending |
+| 11.4 | App Store submission + review iteration — ship the `PrivacyInfo.xcprivacy` flagged in 11.1b, submit, respond to Apple Review feedback, ship code-side fixes if Apple flags anything | hybrid | ⏳ Pending |
+| 11.5 | Release docs + retrospective — `DEVELOPMENT.md §6 / §7` final fills, ROADMAP close, tag `phase-11`, README version bump | agent | ⏳ Pending |
+
+> 11.1's three sub-pieces ran in parallel agent worktrees alongside
+> Phase 10. 11.1c (screenshots) ended without committing — the
+> existing snapshot pipeline doesn't produce App-Store-spec sizes
+> out of the box and the work was bigger than the agent budget.
+> Deferring it to 11.2's upload window is the right call:
+> Apple's specs change, the app's UI may shift between now and
+> submission, and re-running the pipeline at submission time is
+> cheap.
 
 ---
 
