@@ -115,3 +115,78 @@ struct PhotoSaveServiceTests {
         #expect(saved.thumbnailData != nil)
     }
 }
+
+@Suite("Photo promote service")
+struct PhotoPromoteServiceTests {
+    private static func makePhoto(
+        sortOrder: Int16,
+        itemID: UUID = UUID()
+    ) -> ItemPhoto {
+        ItemPhoto(itemID: itemID, sortOrder: sortOrder)
+    }
+
+    @Test("Promoting a non-primary photo writes sortOrder = currentMin - 1")
+    func promotesToOneBelowCurrentMin() async throws {
+        let itemID = UUID()
+        let primary = Self.makePhoto(sortOrder: 0, itemID: itemID)
+        let middle = Self.makePhoto(sortOrder: 1, itemID: itemID)
+        let last = Self.makePhoto(sortOrder: 2, itemID: itemID)
+        let repo = InMemoryItemPhotoRepository()
+        for photo in [primary, middle, last] {
+            try await repo.create(photo)
+        }
+
+        let promoted = try await makePhotoPrimary(
+            middle,
+            among: [primary, middle, last],
+            repository: repo
+        )
+
+        #expect(promoted.sortOrder == -1)
+        // Repository now sorts ascending, so the promoted photo is
+        // first — the user-visible "primary" slot.
+        let persisted = try await repo.photos(for: itemID)
+        #expect(persisted.first?.id == middle.id)
+    }
+
+    @Test("Empty photo list still produces a valid promote (currentMin defaults to 0)")
+    func emptyListPromotesToMinusOne() async throws {
+        let itemID = UUID()
+        let solo = Self.makePhoto(sortOrder: 5, itemID: itemID)
+        let repo = InMemoryItemPhotoRepository()
+        try await repo.create(solo)
+
+        // The "among" array doesn't include the photo being promoted —
+        // models the corner where the strip's photos array is empty.
+        let promoted = try await makePhotoPrimary(
+            solo,
+            among: [],
+            repository: repo
+        )
+
+        #expect(promoted.sortOrder == -1)
+    }
+
+    @Test("Negative current min still gets one below")
+    func negativeMinKeepsShifting() async throws {
+        // After a promote, the new min sortOrder is negative. A
+        // subsequent promote of a different photo must keep going
+        // negative (currentMin - 1), not collapse to 0.
+        let itemID = UUID()
+        let alreadyPromoted = Self.makePhoto(sortOrder: -1, itemID: itemID)
+        let original = Self.makePhoto(sortOrder: 0, itemID: itemID)
+        let repo = InMemoryItemPhotoRepository()
+        try await repo.create(alreadyPromoted)
+        try await repo.create(original)
+
+        let promoted = try await makePhotoPrimary(
+            original,
+            among: [alreadyPromoted, original],
+            repository: repo
+        )
+
+        #expect(promoted.sortOrder == -2)
+        let persisted = try await repo.photos(for: itemID)
+        #expect(persisted.first?.id == original.id)
+    }
+}
