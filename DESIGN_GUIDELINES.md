@@ -132,6 +132,10 @@ Lowercase `naked pantree` works really well. Alternative weighted lockup:
 
 > Machine-readable source of truth: [`assets/brand/colors.json`](assets/brand/colors.json).
 > If you change a value here, change it there in the same commit.
+>
+> Rollout plan, semantic-token layer, dark-mode hexes, and computed WCAG
+> ratios live in [`docs/BRAND_PASS_PROPOSAL.md`](docs/BRAND_PASS_PROPOSAL.md)
+> (Phase 10.2 research). Implementation is tracked under Phase 10.5.
 
 ### 🌿 Primary Theme (Farm + Modern)
 
