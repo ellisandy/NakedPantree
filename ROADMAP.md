@@ -221,11 +221,11 @@ household.
 
 **Exit criteria**
 
-- [ ] Setting an `expiresAt` on a real device schedules a local
+- [x] Setting an `expiresAt` on a real device schedules a local
       notification with the correct identifier and trigger date.
-- [ ] Editing the expiry reschedules; clearing the expiry cancels.
-- [ ] Tapping the notification opens the app on that item's detail.
-- [ ] On two devices on the same household, both fire — accepted per
+- [x] Editing the expiry reschedules; clearing the expiry cancels.
+- [x] Tapping the notification opens the app on that item's detail.
+- [x] On two devices on the same household, both fire — accepted per
       `ARCHITECTURE.md` decisions log #5.
 
 **Sub-milestones**
@@ -235,7 +235,7 @@ household.
 | 4.1 | `NotificationScheduler` + lazy permission + scheduling on item save/delete | ✅ Merged ([apps#35](https://github.com/ellisandy/NakedPantree/pull/35)) |
 | 4.2 | Tap-to-deep-link routing (`UNUserNotificationCenterDelegate` + `RootView` navigation) | ✅ Merged ([apps#36](https://github.com/ellisandy/NakedPantree/pull/36)) |
 | 4.3 | Auto-reschedule on `NSPersistentStoreRemoteChange` (complementary to issue #28) | ✅ Merged ([apps#37](https://github.com/ellisandy/NakedPantree/pull/37)) |
-| 4.4 | Voice-review of notification copy + two-device verification runbook | 🟡 In review |
+| 4.4 | Voice-review of notification copy + two-device verification runbook | ✅ Merged ([apps#38](https://github.com/ellisandy/NakedPantree/pull/38)) |
 
 ---
 
