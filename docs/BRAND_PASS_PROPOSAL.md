@@ -343,7 +343,13 @@ earlier items unblock later ones.
    Contrast variants matching §4. Update `Color+Brand.swift` so each
    static var resolves via `Color("BrandForestGreen", bundle: …)`
    instead of `Color(brandHex:)`. Call sites stay byte-identical;
-   appearance handling becomes free. Foundation for everything else.
+   appearance handling becomes free. Also reconcile the existing
+   `AccentColor.colorset` (currently a flat `#2F5D50`): either give it
+   the same light/dark/high-contrast variants as `BrandForestGreen`,
+   or delete it and point the project-level accent reference at
+   `BrandForestGreen` directly. Without this, the system `.tint` stays
+   on the light-mode green in dark mode while brand surfaces lift —
+   subtle but visible drift. Foundation for everything else.
 
 2. **Introduce semantic role tokens (`Color+Semantic.swift`).** Add
    `Color.surface`, `Color.surfaceElevated`, `Color.primary`,
