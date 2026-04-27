@@ -683,6 +683,198 @@ devices:
 
 ---
 
+## 5e. Phase 6 — iPad / Mac (Designed for iPad) verification
+
+The cross-household views landed across 6.1 / 6.2a / 6.2b. This
+runbook flips Phase 6 from "code lands and CI is green" to "the app
+is actually usable on iPad in both orientations and on Mac at
+multiple window sizes" — the second exit criterion in
+`ROADMAP.md` Phase 6.
+
+There is no separate Mac target. Per `project.yml`:
+`SUPPORTS_MAC_DESIGNED_FOR_IPAD: YES`, `SUPPORTS_MACCATALYST: NO`.
+The same iPad binary runs on Apple-silicon Macs via "Designed for
+iPad on Mac." Anywhere this runbook says "Mac" it means that
+delivery model — Mac Catalyst is explicitly out of scope per
+`ARCHITECTURE.md` §10.
+
+The pattern is the same as §5d: every step here is something the
+human has to look at, because the audit at code level can't
+distinguish "different from iPhone but correct for iPad" from
+"broken on iPad." `xcodebuild test` on an iPhone simulator does
+not exercise regular size class.
+
+### 1. iPad landscape — three-column visible
+
+On a real iPad (or `iPad Pro 13-inch` simulator) in landscape:
+
+1. Cold-launch. All three columns visible: sidebar (Smart Lists +
+   Locations), content (placeholder or last selection), detail
+   (placeholder or last selected item).
+2. Tap a Smart List (e.g. **Expiring Soon**). Content column updates
+   in place; sidebar selection moves; detail column unchanged.
+3. Tap a Location. Same — content swaps, detail untouched.
+4. Tap an item in content. Detail column updates. Sidebar
+   selection unchanged.
+5. Repeat with a deep-link tap (Phase 4 expiry notification, if you
+   have one queued from §5c). Sidebar should land on the item's
+   location, content shows that location's items, detail shows the
+   item — all three columns reflect the deep-link in one tick.
+
+If any of those leave a column stale or jump the sidebar selection
+unexpectedly, the bug is in `RootView`'s binding plumbing
+(`sidebarSelection` / `selectedItemID`).
+
+### 2. iPad portrait — sidebar toggle, back-nav
+
+Same iPad rotated to portrait:
+
+1. Sidebar collapses to a button (hamburger / `sidebar.left`) in
+   the content column's toolbar. Content + detail visible.
+2. Tap the sidebar button — sidebar slides in over content. Pick a
+   smart list. Sidebar dismisses; content updates.
+3. Tap an item — detail updates without dismissing the content
+   column. Both still visible.
+4. Tap the content column's back chevron. Detail clears; content
+   stays.
+5. Rotate back to landscape mid-task. The selection should
+   survive — content keeps its items, detail keeps the selected
+   item.
+
+If sidebar selection survives the rotation but content goes blank,
+that's the `@State`-cache / `.task(id:)` race documented in
+`RootView`'s `bootstrapComplete` comment — not a regression unless
+it shows on first launch.
+
+### 3. iPad multitasking — split view + slide over
+
+Stage Manager and split view both narrow the window enough that
+`NavigationSplitView` collapses columns:
+
+1. Drag a second app into split view at 50/50. Naked Pantree's
+   window narrows; the detail column may collapse into the content
+   column's nav stack.
+2. Drag the divider to 70/30 with Naked Pantree on the small side.
+   The split view should collapse further — likely to a single
+   column with iPhone-style push nav.
+3. Drag back to 100%. All three columns return.
+4. At 70/30 small side, exercise sidebar search (next step) — the
+   compact placement may differ from iPad full-width.
+
+The thresholds aren't documented by Apple and shift across iOS
+releases. We don't try to control them; we just verify the app
+doesn't break at any of them.
+
+### 4. Sidebar `.searchable` at iPad regular size class
+
+This is the new surface from 6.2b ([apps#48](https://github.com/ellisandy/NakedPantree/pull/48))
+and has never been driven on iPad regular size class — the
+xcodebuild test job runs an iPhone simulator only. Verify on a real
+iPad or `iPad Pro 13-inch` simulator:
+
+1. Sidebar should show a search field at its top
+   (`.searchable(placement: .sidebar)`). Visible without scrolling.
+2. Type a query that matches items in two different locations
+   (e.g. add "Tomatoes" to Pantry and "Tomato paste" to a second
+   location first, then search "toma").
+3. Content column swaps to **Search** results — title reads
+   "Search," items from both locations appear together.
+4. Tap a result. Detail column shows the item. Sidebar still has
+   the query in the search field; content still shows results.
+5. Tap the back chevron from detail (or use Cmd-[ on Mac). Detail
+   clears but content **stays on the search results**, not the
+   sidebar root. This is the acceptance criterion from #47 that
+   the column-based nav gives for free.
+6. Clear the search field. Content reverts to whatever was selected
+   in the sidebar before search started (e.g. Expiring Soon).
+7. Empty-results path: type a query that matches nothing. Content
+   should show **"Nothing by that name yet."** with a magnifying-
+   glass icon, per `DESIGN_GUIDELINES.md` §10.
+
+If the sidebar search field doesn't appear at all on iPad regular
+or hides itself when the sidebar is collapsed in portrait, the
+placement is being downgraded — file a bug. The fallback in compact
+size class is the navigation-bar drawer; that's expected, not a
+regression.
+
+### 5. Mac (Designed for iPad) — small, medium, large windows
+
+On an Apple-silicon Mac with the build installed via TestFlight or
+a local archive (per `ARCHITECTURE.md` §10 — Designed for iPad on
+Mac is a TestFlight-or-Xcode-archive delivery, not a Cmd-R from
+Xcode):
+
+1. Launch. Default window is roughly two-column iPad-portrait-
+   sized.
+2. Resize the window to ~700 px wide. Three-column should collapse
+   to two-column or fall through to single-column push nav. Verify
+   no clipped toolbar items, no overlapping text, no permanently-
+   hidden controls.
+3. Resize to ~1100 px. All three columns should be visible and
+   functional, identical to iPad landscape.
+4. Resize to a 27" display fullscreen. The detail column shouldn't
+   stretch a single column of text edge-to-edge — `Form` / `List`
+   readability widths kick in by default; verify they do.
+5. Exercise sidebar search (step 4 above) at each window size.
+6. Cmd-W closes the window; Cmd-Q quits. The app should re-launch
+   into the same household / location / item state on next launch
+   (CoreData is the source of truth; nothing app-specific to
+   verify here, but worth noting if it doesn't).
+7. Menu-bar items: **File**, **Edit**, **View**, **Window**,
+   **Help** all populate from SwiftUI defaults. We have no
+   `.commands` block of our own yet — keyboard shortcuts beyond
+   the built-ins (Cmd-Q, Cmd-W, Cmd-, ) are out of scope for 6.3.
+
+If the Mac build crashes at launch, see §7 troubleshooting — the
+`UICloudSharingController` bridge or an entitlement mismatch are
+the usual suspects.
+
+### 6. Phase 6 exit criteria
+
+Tick these in `ROADMAP.md` Phase 6 once each passes:
+
+- [ ] App is usable on iPad in both orientations and on Mac at
+      multiple window sizes.
+
+The other two exit criteria (Expiring Soon list + empty-state
+voice) are owned by 6.1 and 6.4 respectively — 6.3 only carries
+the adaptive-layout one.
+
+### Failure modes
+
+- **`UICloudSharingController` sheet renders empty / cropped on
+  iPad.** The participant list has fixed-width assumptions from
+  iPhone. Wrapping in `.ignoresSafeArea()` (already applied in
+  `SidebarView`) usually papers over this; if not, the controller
+  needs an explicit `popoverAnchor` on iPad. Check Apple's release
+  notes against the iPadOS version under test before reaching for
+  a workaround.
+- **Sidebar search field disappears in portrait.** SwiftUI
+  downgrades `.sidebar` placement to `.navigationBarDrawer` when
+  the split view is in compact mode. That's expected behavior for
+  iPhone-shaped contexts but iPad portrait should still be
+  regular size class — if it drops to compact there, the trait
+  collection is unexpected and worth a bug.
+- **Detail column "stretches" a one-line label across the full
+  Mac window width.** SwiftUI's readability margins handle this
+  by default. If a custom `.frame(maxWidth: .infinity)` somewhere
+  is overriding them, that's the bug.
+- **Mac build crashes at launch with `dyld: missing symbol`.** The
+  binary was built against an iPad SDK newer than the Mac runtime
+  supports. Fix: lower `IPHONEOS_DEPLOYMENT_TARGET` or update
+  macOS. The deployment target lives in `project.yml`.
+- **Tapping a search result on iPad lands on detail but back-nav
+  drops to the sidebar root.** The detail column's pop is
+  popping the wrong stack — almost certainly a stray
+  `NavigationStack` somewhere wrapping a column instead of
+  `NavigationSplitView` driving column-based nav. Grep for
+  `NavigationStack` and confirm none wrap the three-column shell.
+- **Hover affordances missing on Mac.** Out of scope for 6.3.
+  Tracked separately if it earns its keep — the iPad/Mac binary
+  works without them; hover polish is its own decision.
+
+---
+
 ## 6. Release
 
 > **TODO (Xcode Cloud setup PR):** document the Xcode Cloud workflow names
