@@ -384,6 +384,19 @@ Notification copy follows the design guidelines:
 - ❌ "Milk expires tomorrow. You've been warned." — funny in the doc, too
   heavy when it pings someone at 9am.
 
+#### Phase 4.4 voice review
+
+Recorded here so the verdict travels with the spec, not just a closed PR.
+
+| Surface | Copy | Verdict |
+| --- | --- | --- |
+| Notification title | `item.name` (the user's own string) | ✅ The user's words always win. No app-side editorializing. |
+| Notification body | `"Expires <relative>."` — e.g. `"Expires in 3 days."` (`expiryNotificationBodyCopy`) | ✅ Plain, useful, time-anchored to fire (not save) date. Passes the "frustrated user at 9am" test. **Known limitation:** `RelativeDateTimeFormatter` localizes its output, but `"Expires "` is hardcoded English — a Spanish-locale device will read `"Expires en 3 días."` v1.0 ships English-only by design; full localization is a Phase 7 polish item. |
+| Missing-item alert (`RootView`) | `"That item is gone."` | ✅ Short, calm, no joke about a phantom milk bottle. Stays in the personality-off-limits zone (`DESIGN_GUIDELINES.md` §9). |
+| Permission prompt | iOS system default — not customizable in `requestAuthorization(options:)` | n/a |
+
+The `DESIGN_GUIDELINES.md` §9 personality table cites `"This expires soon. Time to act."` as illustrative — the implementation went with the relative-time form because it's measurably more useful (the user knows whether to act today vs. plan for the weekend). The guide's example is a frame, not a literal string requirement.
+
 ---
 
 ## 9. Photos

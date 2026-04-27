@@ -369,6 +369,148 @@ Tick these in `ROADMAP.md` Phase 3 once each passes on real devices:
 
 ---
 
+## 5c. Phase 4 — Expiry notification verification
+
+Two-device verification of the notification scheduler that landed in
+Phase 4.1 / 4.2 / 4.3. Prerequisite: §5b (sharing) passing — both
+devices already round-trip writes against the same household.
+
+Notifications are local (`UNUserNotificationCenter`); there is no
+push channel to test. What we're verifying is that each device's
+observer sees a remote write and reschedules its own pending request.
+
+### 1. Single-device permission and schedule
+
+On phone A:
+
+1. Launch the app. Add an item with an expiry **more than 3 days
+   out** (5+ is the easy-to-reason-about case). At exactly 3 days
+   the 9am trigger may already be in the past relative to "now"
+   and the scheduler silently skips (`expiryNotificationTriggerDate`
+   returns `nil` for past targets).
+2. Tap **Add**. The `requestAuthorization` prompt fires the first
+   time. Tap **Allow**. Per `ARCHITECTURE.md` §8 the prompt is lazy
+   — if it appeared at launch instead of on save, that's a regression.
+3. There is no user-visible inspector for `pendingNotificationRequests()`.
+   Verify scheduling end-to-end with a fast-fire test instead:
+   - Pick an item whose expiry is **3 days + ~5 minutes** out.
+   - Background the app and lock the device.
+   - Wait for the lock-screen banner. Title is the item name; body
+     reads `"Expires in 3 days."`. If the body says "in 4 weeks"
+     or anything anchored to save time instead of fire time,
+     that's the regression `NotificationBodyCopyTests.bodyAnchoredToTriggerDate`
+     catches — flag it.
+4. Cheap permission-state confirmation: Settings → Notifications →
+   Naked Pantree → authorization should be **Allow** with **Show
+   Previews** at *Always* (or *When Unlocked*).
+
+### 2. Reschedule and cancel
+
+The cheapest verification is end-to-end through the lock-screen
+banner (above). The two flows below confirm the *cancel* paths,
+which a fast-fire test won't catch on its own:
+
+1. Schedule a fast-fire item (as above), then before it fires,
+   edit the expiry to push it past tomorrow's 9am. The original
+   banner must **not** appear at the original trigger time. The
+   identifier is deterministic (`"item.<uuid>.expiry"`), so the
+   pending request is replaced rather than duplicated.
+2. Schedule a fast-fire item, then before it fires, edit the item
+   and **clear** the expiry toggle → save. The banner must not
+   appear. The 4.1 form callback handles the cancel directly; the
+   4.3 resync sweep also catches it on the next
+   `RemoteChangeMonitor.changeToken` tick.
+3. Schedule a fast-fire item, then before it fires, delete the
+   item. The banner must not appear.
+
+### 3. Tap-to-deep-link
+
+Reuse the §1 fast-fire item — when it actually rings, you'll
+have a real notification to tap.
+
+1. With the §1 fast-fire item still scheduled, background the app
+   and lock the device.
+2. When the banner fires, tap it (or swipe-to-open from the lock
+   screen).
+3. The app opens on the item's detail view. Sidebar selects the
+   item's location; content selects the item.
+4. Negative test: schedule a fresh fast-fire item, then before it
+   fires delete the item from phone B (or the CloudKit Console).
+   When the banner appears on phone A, tap it. The "That item is
+   gone." alert fires; the user lands on whatever surface they
+   were last viewing.
+
+### 4. Two-device firing
+
+Phones A and B sharing the same household per §5b. Both phones
+must have launched the app at least once with notification
+permission granted — pending requests are scheduled on each
+device locally; a phone that never ran resync has no requests to
+fire (see Failure modes).
+
+1. On phone A, add an item with a fast-fire expiry (3 days + ~5
+   minutes out per §5c step 1).
+2. On phone B, wait ~5s, then confirm the new item appears in
+   the relevant location list. Item appearing = `RemoteChangeMonitor`
+   ticked → resync ran → pending request scheduled. Tying
+   verification to user-visible state avoids guessing about
+   internal timing.
+3. Background both phones. Wait for the trigger time. Both
+   devices fire the banner. Per `ARCHITECTURE.md` decisions log
+   #5 this is intentional — server-side dedup would require
+   infrastructure we don't have.
+4. Edit the expiry on phone A. Wait ~5s, confirm the edit shows
+   on phone B's item detail. The pending request on phone B
+   reschedules on the same `changeToken` tick.
+5. Delete the item on phone A. Wait ~5s, confirm phone B's row
+   disappears. The pending request on phone B cancels via the
+   resync sweep's stale-identifier diff.
+
+### 5. Phase 4 exit criteria
+
+Tick these in `ROADMAP.md` Phase 4 once each passes on real devices:
+
+- [ ] Setting an `expiresAt` on a real device schedules a local
+      notification with the correct identifier and trigger date.
+- [ ] Editing the expiry reschedules; clearing the expiry cancels.
+- [ ] Tapping the notification opens the app on that item's detail.
+- [ ] On two devices on the same household, both fire.
+
+### Failure modes
+
+- **Permission prompt appears at cold launch instead of on first
+  save.** Either the form-save path lost its lazy gate, or
+  `NotificationScheduler.resync` is calling
+  `ensureAuthorization` instead of bailing on `.notDetermined`
+  up front. Check `resync(currentItems:)` — the gate must short-
+  circuit before the per-item loop.
+- **Body reads "in 4 weeks" instead of "in 3 days".** The body
+  is computed against save time instead of trigger time.
+  `expiryNotificationBodyCopy(expiresAt:relativeTo:)` must take
+  the trigger date as `relativeTo`. Regression covered by
+  `NotificationBodyCopyTests`.
+- **Phone B fires nothing after a phone-A write.** Most common:
+  phone B never ran the app with notification permission granted
+  — pending requests are scheduled per-device, and `resync`
+  needs at least one foreground launch to populate them. Less
+  common: `RemoteChangeMonitor` isn't wired (the production
+  `init(coordinator:)` branch in `NakedPantreeApp.swift`, not
+  the no-op `init()`). The simulator with no iCloud account
+  uses the no-op variant on purpose.
+- **Tap on a deleted item shows nothing.** The "That item is gone."
+  alert is gated on `bootstrapComplete`. If the cold-launch path
+  applied the deep link before bootstrap finished, the lookup
+  would short-circuit. `RootView`'s `.task` clears
+  `pendingItemID` before awaiting `applyDeepLink`; if a refactor
+  reorders that, the regression would surface here.
+- **Both devices fire, but one has the wrong title.** Title is
+  the item's `name` field at scheduling time on each device.
+  A diverged name means the resync sweep didn't pick up the
+  remote rename — check `RemoteChangeMonitor.changeToken` is
+  ticking on the affected device.
+
+---
+
 ## 6. Release
 
 > **TODO (Xcode Cloud setup PR):** document the Xcode Cloud workflow names
