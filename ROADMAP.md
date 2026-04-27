@@ -232,9 +232,10 @@ household.
 
 | # | Title | Status |
 | --- | --- | --- |
-| 4.1 | `NotificationScheduler` + lazy permission + scheduling on item save/delete | 🟡 In review |
-| 4.2 | `NSManagedObjectContextDidSave` / `NSPersistentStoreRemoteChange` observation + tap-to-deep-link routing | ⏳ Pending |
-| 4.3 | Voice-review of notification copy + two-device verification runbook | ⏳ Pending |
+| 4.1 | `NotificationScheduler` + lazy permission + scheduling on item save/delete | ✅ Merged ([apps#35](https://github.com/ellisandy/NakedPantree/pull/35)) |
+| 4.2 | Tap-to-deep-link routing (`UNUserNotificationCenterDelegate` + `RootView` navigation) | 🟡 In review |
+| 4.3 | Auto-reschedule on `NSPersistentStoreRemoteChange` (depends on issue #28 history-token bookkeeping) | ⏳ Pending |
+| 4.4 | Voice-review of notification copy + two-device verification runbook | ⏳ Pending |
 
 ---
 

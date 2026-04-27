@@ -21,8 +21,10 @@ struct RootView: View {
     @State private var sidebarSelection: SidebarSelection?
     @State private var selectedItemID: Item.ID?
     @State private var bootstrapComplete = false
+    @State private var isShowingMissingItemAlert = false
     @Environment(\.repositories) private var repositories
     @Environment(\.accountStatusMonitor) private var accountStatusMonitor
+    @Environment(\.notificationRouting) private var notificationRouting
 
     var body: some View {
         Group {
@@ -48,6 +50,35 @@ struct RootView: View {
         .task {
             await runBootstrap()
             bootstrapComplete = true
+            // Cold-launch path: a tap before the view appeared will have
+            // already published `pendingItemID`. `.onChange` only fires
+            // on changes after the view is alive, so we apply once here.
+            // Clear *before* awaiting so a second tap during the
+            // suspended apply queues into `pendingItemID` instead of
+            // being lost.
+            if let pending = notificationRouting.pendingItemID {
+                notificationRouting.pendingItemID = nil
+                await applyDeepLink(itemID: pending)
+            }
+        }
+        .onChange(of: notificationRouting.pendingItemID) { _, newValue in
+            // Warm-tap path: app already running, user taps a banner.
+            // Bootstrap-complete gate keeps the cold-launch case from
+            // double-applying — the `.task` block above handles that
+            // and clears `pendingItemID` before the change observer
+            // would fire on the cleared-back-to-nil value.
+            guard bootstrapComplete, let id = newValue else { return }
+            // Same ordering rationale as the cold-launch path: clear
+            // before awaiting so a second tap during the suspended
+            // apply re-publishes onto `pendingItemID` rather than
+            // racing with this completion.
+            notificationRouting.pendingItemID = nil
+            Task {
+                await applyDeepLink(itemID: id)
+            }
+        }
+        .alert("That item is gone.", isPresented: $isShowingMissingItemAlert) {
+            Button("OK", role: .cancel) {}
         }
     }
 
@@ -68,6 +99,31 @@ struct RootView: View {
             if let itemID = await SnapshotFixtures.resolveInitialItem(in: repositories) {
                 selectedItemID = itemID
             }
+        }
+    }
+
+    /// Resolves a notification-tap deep link. Sets the sidebar to the
+    /// item's location and selects the item, or shows the
+    /// "That item is gone." alert if the item has been deleted (e.g.
+    /// remote household member tossed it before the tap landed).
+    ///
+    /// Per ARCHITECTURE.md §8 the missing-item case should land on the
+    /// Expiring Soon smart list. That list is stubbed until Phase 6, so
+    /// the interim is a deselect + alert in place. The §8 note records
+    /// the divergence; revisit when Smart Lists ship.
+    private func applyDeepLink(itemID: Item.ID) async {
+        do {
+            guard let item = try await repositories.item.item(id: itemID) else {
+                isShowingMissingItemAlert = true
+                return
+            }
+            sidebarSelection = .location(item.locationID)
+            selectedItemID = item.id
+        } catch {
+            // Repository read failed — most likely a transient store
+            // hiccup. Keep the user where they were rather than dumping
+            // them into an alert; if it was a real bug, the next tap or
+            // remote-change tick will reload state.
         }
     }
 }

@@ -15,8 +15,16 @@ struct NakedPantreeApp: App {
     private let accountStatusMonitor: AccountStatusMonitor
     private let householdSharing: CloudHouseholdSharingService?
     private let notificationScheduler: NotificationScheduler
+    private let notificationRouting: NotificationRoutingService
 
     init() {
+        // Phase 4.2: a single routing service across all branches —
+        // preview / snapshot / test surfaces never get tap callbacks
+        // (no scheduled notifications) but the environment value still
+        // needs to resolve, and a fresh service is cheap.
+        let routing = NotificationRoutingService()
+        notificationRouting = routing
+
         if SnapshotFixtures.isSnapshotMode {
             // Bypass Core Data when the snapshot UI tests launch us —
             // they need a deterministic, populated state and never want
@@ -75,6 +83,11 @@ struct NakedPantreeApp: App {
             NakedPantreeAppDelegate.shareAcceptance = CloudShareAcceptance(container: container)
             notificationScheduler = NotificationScheduler(center: .current())
         }
+        // Phase 4.2: the delegate routes notification taps into this
+        // service. Same static-var pattern as `shareAcceptance` —
+        // delegate construction precedes app init, so the seam is a
+        // post-hoc handoff.
+        NakedPantreeAppDelegate.notificationRouting = routing
     }
 
     var body: some Scene {
@@ -85,6 +98,7 @@ struct NakedPantreeApp: App {
                 .environment(\.accountStatusMonitor, accountStatusMonitor)
                 .environment(\.householdSharing, householdSharing)
                 .environment(\.notificationScheduler, notificationScheduler)
+                .environment(\.notificationRouting, notificationRouting)
         }
     }
 }
