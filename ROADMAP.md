@@ -261,11 +261,11 @@ household.
 
 **Exit criteria**
 
-- [ ] Photo added on phone A appears on phone B with thumbnail in
+- [x] Photo added on phone A appears on phone B with thumbnail in
       <10s, full asset shortly after.
-- [ ] An item with five photos still loads instantly in list views
+- [x] An item with five photos still loads instantly in list views
       (thumbnails only).
-- [ ] CloudKit dev schema matches the model after adding `ItemPhoto`.
+- [x] CloudKit dev schema matches the model after adding `ItemPhoto`.
 
 > **Phase ordering exception:** Phase 5 may be deferred until after
 > Phase 6 if scope pressure demands. Photos are valuable but not on the
@@ -279,7 +279,7 @@ household.
 | 5.1 | App-layer image pipeline (`ImageIO` resize + thumbnail, EXIF-correct) | ✅ Merged ([apps#40](https://github.com/ellisandy/NakedPantree/pull/40)) |
 | 5.2 | `PhotosPicker` + camera bridge + primary-photo header in `ItemDetailView` | ✅ Merged ([apps#41](https://github.com/ellisandy/NakedPantree/pull/41)) |
 | 5.3 | Secondary photo strip + full-screen pager + delete + Make Primary (long-press drag deferred) | ✅ Merged ([apps#42](https://github.com/ellisandy/NakedPantree/pull/42)) |
-| 5.4 | Two-device sync verification + dev schema deploy + `DEVELOPMENT.md` §5d runbook | 🟡 In review |
+| 5.4 | Two-device sync verification + dev schema deploy + `DEVELOPMENT.md` §5d runbook | ✅ Merged ([apps#43](https://github.com/ellisandy/NakedPantree/pull/43)) |
 
 **Persistence layer status (sanity check, not a sub-milestone):** the
 `ItemPhoto` Core Data entity, repository protocol/impl, and CRUD tests
