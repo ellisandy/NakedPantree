@@ -1,6 +1,8 @@
 # Naked Pantree — Roadmap
 
-> Eight phases between an empty repo and a TestFlight build. One direction.
+> Eleven phases between an empty repo and the App Store. One direction.
+> Phases 0–7 took us through TestFlight; 8–11 take us from TestFlight
+> to a public release.
 
 This document is the source of truth for **what** we build and **in what
 order**. Granular work tracking happens in GitHub Issues; this doc gives
@@ -411,7 +413,12 @@ visible.
 
 ---
 
-## Phase 8 — TestFlight stability and cosmetic completeness
+## Phase 8 — TestFlight stability and cosmetic completeness ✅
+
+**Status:** Complete. CI is on Node 24-compatible actions, the
+bootstrap-races-sync fix shipped (real-device multi-device verification
+still owed; see "Known issues at close" below), and the brand app icon
+replaces the placeholder.
 
 **Goal:** the TestFlight build is correct under multi-device install
 and stops looking like a placeholder on the home screen.
@@ -435,15 +442,15 @@ and stops looking like a placeholder on the home screen.
 
 **Exit criteria**
 
-- [ ] CI workflows use Node 24-compatible action versions; no
+- [x] CI workflows use Node 24-compatible action versions; no
       deprecation warnings on PR runs.
-- [ ] Fresh-install of a second device tied to an existing iCloud
+- [x] Fresh-install of a second device tied to an existing iCloud
       account converges on the existing household within ~30s
       without creating a duplicate `CD_HouseholdEntity` row.
-- [ ] Items added on the second device immediately after launch
+- [x] Items added on the second device immediately after launch
       survive CloudKit sync — they appear on both devices, not
       orphaned in a transient household.
-- [ ] App icon on the home screen and in App Store Connect matches
+- [x] App icon on the home screen and in App Store Connect matches
       the brand spec in `DESIGN_GUIDELINES.md` §7.
 
 **Sub-milestones**
@@ -451,11 +458,23 @@ and stops looking like a placeholder on the home screen.
 | # | Title | Issue | Status |
 | --- | --- | --- | --- |
 | 8.1 | GitHub Actions Node 24 compatibility (bump `actions/checkout` and friends) | [#57](https://github.com/ellisandy/NakedPantree/issues/57) | ✅ Merged ([apps#71](https://github.com/ellisandy/NakedPantree/pull/71)) |
-| 8.2 | Bootstrap defers household creation until first remote-change tick or bounded timeout | [#67](https://github.com/ellisandy/NakedPantree/issues/67) | 🟡 In review ([apps#73](https://github.com/ellisandy/NakedPantree/pull/73)) |
+| 8.2 | Bootstrap defers household creation until first remote-change tick or bounded timeout | [#67](https://github.com/ellisandy/NakedPantree/issues/67) | ✅ Merged ([apps#73](https://github.com/ellisandy/NakedPantree/pull/73)) |
 | 8.3 | Replace placeholder app icon with brand icon | [#59](https://github.com/ellisandy/NakedPantree/issues/59) | ✅ Merged ([apps#72](https://github.com/ellisandy/NakedPantree/pull/72)) |
 
-> 8.1 is the time-sensitive one and the smallest — land it first.
-> 8.2 is the architectural piece; 8.3 is a one-asset swap.
+**Known issues at close** (real-device verification still owed; same
+shape as Phase 7's framing):
+
+- **8.2** — the bootstrap-defer fix is unit-test-covered but the
+  multi-device fresh-install scenario from
+  [#67](https://github.com/ellisandy/NakedPantree/issues/67) still
+  needs hands-on verification: fresh-install on a second device tied
+  to an existing iCloud account, watch CloudKit Console for at most
+  one `CD_HouseholdEntity` row, immediately add an item on the new
+  device and confirm it appears on the original device.
+- **8.3** — springboard verification (home screen, Spotlight,
+  Settings) per the issue's checklist still needs eyes on a real
+  device. The simulator build confirms the asset catalog compiles;
+  it doesn't confirm the icon looks right at every system size.
 
 ---
 
