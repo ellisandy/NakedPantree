@@ -324,7 +324,7 @@ household-shaped.
 | 6.1 | `ExpiringSoonView` (cross-location, sorted by expiry) + restore §8 missing-item routing | ✅ Merged ([apps#45](https://github.com/ellisandy/NakedPantree/pull/45)) |
 | 6.2a | `RecentlyAddedView` (cross-location, sorted by `createdAt` desc) | ✅ Merged ([apps#46](https://github.com/ellisandy/NakedPantree/pull/46)) |
 | 6.2b | Cross-household search surface from the sidebar (`.searchable(placement: .sidebar)`) | 🟡 In review ([apps#48](https://github.com/ellisandy/NakedPantree/pull/48)) |
-| 6.3 | iPad / Mac (Designed for iPad) verification + `DEVELOPMENT.md` §5e runbook | ⏳ Pending |
+| 6.3 | iPad / Mac (Designed for iPad) verification + `DEVELOPMENT.md` §5e runbook | 🟡 In review |
 | 6.4 | Empty-state copy pass with brand voice | ⏳ Pending |
 
 ---
