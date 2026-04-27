@@ -511,6 +511,178 @@ Tick these in `ROADMAP.md` Phase 4 once each passes on real devices:
 
 ---
 
+## 5d. Phase 5 — Photo sync verification
+
+Two-device verification of the photo pipeline that landed in Phase
+5.1 / 5.2 / 5.3. Prerequisite: §5b (sharing) passing — both devices
+already round-trip writes against the same household.
+
+The key asymmetry to keep in mind: `ItemPhoto.thumbnailData` is an
+inline ~64 KB JPEG that CloudKit syncs as a regular attribute,
+while `ItemPhoto.imageData` has External Storage enabled and is
+promoted to a `CKAsset` on the wire. *Expected behavior:*
+thumbnails arrive on the receiving device on the next
+`RemoteChangeMonitor` tick; the full asset follows once CloudKit
+completes the asset transfer (which can be tens of seconds on a
+cellular link or a large photo). The exit criteria allow this gap
+by design — the first run of this runbook is the verification
+that the expected behavior actually holds.
+
+### 1. Single-device dev schema population
+
+Like the entities in §5a, `CD_ItemPhotoEntity` is **not deployed by
+hand** — `NSPersistentCloudKitContainer` populates it the first
+time the app writes a photo against a real iCloud account. To
+trigger:
+
+1. On phone A (real device, signed into iCloud), launch the app
+   and open any item's detail view.
+2. Toolbar → **Add Photo** → **Choose from Library**. Pick a
+   photo. The app first prompts for camera (lazily, only if you
+   pick **Take Photo** instead) — the library path skips that
+   prompt entirely because `PhotosPicker` is out-of-process.
+3. Open the [CloudKit Console](https://icloud.developer.apple.com/dashboard),
+   pick `iCloud.cc.mnmlst.nakedpantree`, **Schema → Record Types**.
+   Confirm `CD_ItemPhotoEntity` exists with the expected fields:
+   - `CD_id` (String / UUID)
+   - `CD_imageData` (Asset)
+   - `CD_thumbnailData` (Bytes)
+   - `CD_caption` (String, optional)
+   - `CD_sortOrder` (Int64)
+   - `CD_createdAt` (Date / Timestamp)
+4. Confirm `CD_imageData` shows as an **Asset** field in the
+   schema, not Bytes. `NSPersistentCloudKitContainer` only
+   promotes a Core Data Binary attribute to `CKAsset` when the
+   model has External Storage enabled — if the field appears as
+   Bytes, the storage flag is off and the schema needs the
+   model fix before redeploying.
+
+If the record type doesn't appear within ~30s of the photo write,
+re-check the §5a failure modes — same App ID / container assignment
+issues bite here.
+
+### 2. Single-device add / edit / delete
+
+Still on phone A:
+
+1. Open the Cheese (or any) item detail. Add three photos via
+   library picker. Verify after each save:
+   - Primary header shows the photo with the lowest `sortOrder`
+     — i.e. the first photo added (sortOrders 0, 1, 2 in add
+     order; first add stays primary until someone runs Make
+     Primary).
+   - Strip below header appears once `photos.count >= 2`.
+2. Tap the primary header → `PhotoPagerView` opens at index 0.
+   Swipe through all three. Page-dot indicator updates.
+3. Long-press a strip thumbnail → context menu shows
+   **Make Primary** + **Delete**. Tap **Make Primary** on the
+   third photo (the one currently rightmost in the strip). The
+   header should swap to that photo within ~200ms; the previously-
+   primary photo drops back into the strip.
+4. Open the pager, tap the trash icon. Pager dismisses; the
+   deleted photo is gone from the strip. Confirm the next photo
+   in sortOrder ascending becomes primary if you deleted the
+   primary.
+
+### 3. Two-device sync (thumbnail-first, full asset shortly after)
+
+Phones A and B sharing the same household per §5b. Both apps
+foregrounded:
+
+1. On phone A, add a photo to an item.
+2. On phone B, watch the same item's detail view. Within ~5s
+   (after the `RemoteChangeMonitor` debounce) the photo should
+   appear — but may render initially with the small thumbnail
+   blob and only swap to the full-resolution image after the
+   `CKAsset` transfer completes. Phase 5 exit criterion #1 allows
+   this gap.
+3. Make Primary on phone A → on phone B, the same photo should
+   move into the header on the next remote-change tick (~5s).
+4. Delete on phone A → on phone B the photo disappears from the
+   strip on the next remote-change tick. If the deleted photo was
+   primary, the next-lowest sortOrder photo becomes the new header
+   on B (auto-promote falls out of the natural ascending sort).
+
+### 4. Five-photo performance check
+
+Phase 5 exit criterion #2: an item with five photos still loads
+instantly in list views (thumbnails only).
+
+1. On phone A, add five photos to a single item.
+2. Force-quit the app (swipe up).
+3. Cold-launch. Navigate Kitchen → tap into the five-photo item.
+4. Detail view should appear without visible hitch. The strip
+   reads `thumbnailData` (~64 KB each, decoded inline) — five
+   thumbnails total ~320 KB of decoded `UIImage` memory. The
+   primary header reads the full-resolution `imageData` — that's
+   a single ~3 MB decode, which is fine for one image per
+   surface.
+5. Open the pager — swipe through all five. Each page eagerly
+   decodes its full-resolution `imageData`, so total resident
+   memory while the pager is open is ~15 MB. Acceptable for v1.0;
+   if a real-device hitch shows up, the fix lives at
+   `PhotoPagerView` (per-page `.onAppear` decode + `.onDisappear`
+   release).
+
+### 5. Phase 5 exit criteria
+
+Tick these in `ROADMAP.md` Phase 5 once each passes on real
+devices:
+
+- [ ] Photo added on phone A appears on phone B with thumbnail in
+      <10s, full asset shortly after.
+- [ ] An item with five photos still loads instantly in list views
+      (thumbnails only).
+- [ ] CloudKit dev schema matches the model after adding `ItemPhoto`.
+
+### Failure modes
+
+- **`CD_ItemPhotoEntity` doesn't appear in the CloudKit Console
+  after a photo save.** Same root causes as §5a step 1 — App ID's
+  CloudKit container assignment didn't save in the portal,
+  provisioning profile is stale, or the simulator isn't actually
+  signed in. The account-status banner makes the third loud.
+- **Thumbnail arrives on phone B but the full asset never does.**
+  CloudKit asset transfers can lag on cellular or low-priority
+  links — the first thing to do is wait a minute or two before
+  treating it as broken. If the asset still hasn't arrived,
+  check the CloudKit Console under **Logs** for asset-transfer
+  errors on phone A's user record. The 2048 px resize keeps a
+  typical photo well under any documented CloudKit per-asset
+  limit, so a size-related rejection would be surprising — but
+  the logs will say so explicitly if it is.
+- **Photo on phone B renders with a placeholder gray square.**
+  `thumbnailData` decode failed — the persisted bytes are likely
+  truncated or in an unrecognized container. Check the strip
+  tile's `thumbnailUIImage` decode path (`ItemPhoto` extension
+  in `ItemDetailView.swift`). If the primary header renders
+  fine but the strip doesn't, the inline thumbnail mirror is the
+  problem, not the asset.
+- **Make Primary on phone A doesn't propagate to phone B.** The
+  promote writes a single row with `currentMin - 1` and the
+  receiving device should resort on the next
+  `RemoteChangeMonitor` tick. If the strip on B doesn't reorder,
+  check Xcode console on B for `NSPersistentStoreRemoteChange`
+  notifications — silence means the observer didn't fire (see
+  §5a "Phone B sees nothing after accepting" troubleshooting).
+- **Deleting a photo on phone A leaves the row visible on B.**
+  Cascade-delete only fires when the parent *Item* is deleted; a
+  direct photo delete goes through `ItemPhotoRepository.delete(id:)`
+  and skips cascade entirely. Confirm the row is actually gone
+  from CloudKit Console under Data — if it is, B's failure to
+  reload is a `RemoteChangeMonitor` bug, not a persistence one.
+- **Five-photo item hitches on appearance.** The strip is
+  rendering full-resolution `imageData` instead of `thumbnailData`.
+  Check `photoStripTile(for:at:)` in `ItemDetailView.swift` —
+  it must use `photo.thumbnailUIImage`, not `photo.uiImage`.
+- **Pager memory grows unbounded on a multi-photo item.** Each
+  page decodes its full-resolution image eagerly per the doc-
+  comment in `PhotoPagerView`. Acceptable for v1.0 but if real-
+  device pressure surfaces, retrofit lazy decode (per-page
+  `.onAppear` decode + `.onDisappear` release).
+
+---
+
 ## 6. Release
 
 > **TODO (Xcode Cloud setup PR):** document the Xcode Cloud workflow names
