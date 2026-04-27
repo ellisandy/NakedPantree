@@ -22,6 +22,12 @@ public protocol HouseholdRepository: Sendable {
     /// creating it on first call. Always private-only — ignores any
     /// accepted shared households entirely.
     func ensurePrivateHousehold() async throws -> Household
+    /// Non-creating peek for the private-store household. Returns `nil`
+    /// when the local store is empty — used by `BootstrapService` to
+    /// distinguish "genuinely first launch" from "CloudKit sync hasn't
+    /// arrived yet" without committing a new row. Never falls back to
+    /// the shared store.
+    func existingPrivateHousehold() async throws -> Household?
     func update(_ household: Household) async throws
 }
 

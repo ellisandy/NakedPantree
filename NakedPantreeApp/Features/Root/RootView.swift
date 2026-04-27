@@ -108,7 +108,8 @@ struct RootView: View {
     private func runBootstrap() async {
         let bootstrap = BootstrapService(
             household: repositories.household,
-            location: repositories.location
+            location: repositories.location,
+            waitForRemoteChange: makeRemoteChangeWaiter()
         )
         try? await bootstrap.bootstrapIfNeeded()
 
@@ -121,6 +122,51 @@ struct RootView: View {
             }
             if let itemID = await SnapshotFixtures.resolveInitialItem(in: repositories) {
                 selectedItemID = itemID
+            }
+        }
+    }
+
+    /// Builds the closure that `BootstrapService` awaits on a fresh
+    /// install: it resolves on the first `RemoteChangeMonitor` tick
+    /// (sync has begun importing) so bootstrap can re-peek for an
+    /// existing household before creating a duplicate. Returns
+    /// immediately when iCloud is signed-out / restricted — there's
+    /// no sync coming, no point burning the bootstrap timeout on the
+    /// splash.
+    ///
+    /// Implementation note: `RemoteChangeMonitor.changeToken` is
+    /// `@Observable`, so polling it via `withObservationTracking` would
+    /// give a one-shot `onChange` callback — but the continuation
+    /// must also be resumed if the surrounding task is cancelled by
+    /// `BootstrapService`'s timeout race, otherwise we'd leak the
+    /// continuation. A short polling loop with `Task.sleep` is the
+    /// simplest shape that handles both paths cleanly: cancellation
+    /// throws out of the sleep, and the loop exits.
+    private func makeRemoteChangeWaiter() -> @Sendable () async -> Void {
+        let monitor = remoteChangeMonitor
+        let statusMonitor = accountStatusMonitor
+        return {
+            // No-op monitor (preview / snapshot / EMPTY_STORE / unit
+            // test host paths) → no remote-change tick will ever
+            // arrive. Skip the wait so bootstrap falls through to
+            // create immediately rather than burning the timeout
+            // every cold launch in those configurations.
+            guard monitor.isObserving else { return }
+            let isAvailable = await MainActor.run { statusMonitor.status == .available }
+            guard isAvailable else { return }
+            let initial = await MainActor.run { monitor.changeToken }
+            // Poll every ~75ms until the token bumps or the task is
+            // cancelled by the bootstrap timeout. The monitor's own
+            // 120ms debounce dominates the worst-case wakeup latency
+            // anyway — a tighter poll buys nothing real.
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .milliseconds(75))
+                } catch {
+                    return
+                }
+                let current = await MainActor.run { monitor.changeToken }
+                if current != initial { return }
             }
         }
     }

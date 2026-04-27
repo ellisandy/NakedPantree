@@ -450,9 +450,9 @@ and stops looking like a placeholder on the home screen.
 
 | # | Title | Issue | Status |
 | --- | --- | --- | --- |
-| 8.1 | GitHub Actions Node 24 compatibility (bump `actions/checkout` and friends) | [#57](https://github.com/ellisandy/NakedPantree/issues/57) | 🟡 In review ([apps#71](https://github.com/ellisandy/NakedPantree/pull/71)) |
-| 8.2 | Bootstrap defers household creation until first remote-change tick or bounded timeout | [#67](https://github.com/ellisandy/NakedPantree/issues/67) | ⏳ Pending |
-| 8.3 | Replace placeholder app icon with brand icon | [#59](https://github.com/ellisandy/NakedPantree/issues/59) | 🟡 In review ([apps#72](https://github.com/ellisandy/NakedPantree/pull/72)) |
+| 8.1 | GitHub Actions Node 24 compatibility (bump `actions/checkout` and friends) | [#57](https://github.com/ellisandy/NakedPantree/issues/57) | ✅ Merged ([apps#71](https://github.com/ellisandy/NakedPantree/pull/71)) |
+| 8.2 | Bootstrap defers household creation until first remote-change tick or bounded timeout | [#67](https://github.com/ellisandy/NakedPantree/issues/67) | 🟡 In review ([apps#73](https://github.com/ellisandy/NakedPantree/pull/73)) |
+| 8.3 | Replace placeholder app icon with brand icon | [#59](https://github.com/ellisandy/NakedPantree/issues/59) | ✅ Merged ([apps#72](https://github.com/ellisandy/NakedPantree/pull/72)) |
 
 > 8.1 is the time-sensitive one and the smallest — land it first.
 > 8.2 is the architectural piece; 8.3 is a one-asset swap.

@@ -1078,15 +1078,20 @@ household, leaving the newer one orphaned. Items added during the
 gap go into the orphaned household and become invisible after
 re-binding.
 
-**Fix.** Tracked as
-[#67](https://github.com/ellisandy/NakedPantree/issues/67) — needs
-real engineering (defer bootstrap until first remote-change tick
-or bounded timeout, with offline-first-launch handling). Until
-fixed, the workaround for testing is: on a fresh install of a
-second device, **wait ~30s after first launch before adding
-items** so CloudKit sync has time to replicate the existing
-household before bootstrap commits. Cleaning up orphan households
-from CloudKit Console requires manually deleting the extra
-`CD_HouseholdEntity` rows (and their associated `CD_LocationEntity`
-"Kitchen" rows) per zone — Core Data's CloudKit mirror doesn't
-cascade-delete from the dashboard side.
+**Fix.** Phase 8.2 / [#67](https://github.com/ellisandy/NakedPantree/issues/67):
+`BootstrapService` now peeks the private store before committing
+and, if empty, races the first `NSPersistentStoreRemoteChange`
+notification (signal that CloudKit sync has begun importing)
+against an 8s timeout. Whichever wins, bootstrap re-peeks; only if
+the store is *still* empty after the wait does it call
+`ensurePrivateHousehold()` and create a new row. The waiter is
+gated on `RemoteChangeMonitor.isObserving` and
+`AccountStatusMonitor.status == .available`, so signed-out / new-
+account / preview / test paths fall through immediately rather
+than burning the timeout on every cold launch. Real-device two-
+device verification of this path is part of the Phase 8 exit
+criteria (see ROADMAP.md). Cleaning up orphan households left
+behind by pre-fix builds is one-time CloudKit Console hygiene —
+delete the extra `CD_HouseholdEntity` rows (and their associated
+`CD_LocationEntity` "Kitchen" rows) per zone manually; Core Data's
+CloudKit mirror doesn't cascade-delete from the dashboard side.
