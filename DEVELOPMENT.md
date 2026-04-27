@@ -85,6 +85,31 @@ xcodebuild build \
     -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest'
 ```
 
+#### Dev build vs TestFlight build — same bundle id, different CloudKit environments
+
+Both builds use bundle id `cc.mnmlst.nakedpantree` and CloudKit
+container `iCloud.cc.mnmlst.nakedpantree`, but they hit **different
+environments inside that container**:
+
+- **Local Xcode build** (Cmd-R against a real device or simulator) is
+  Development-signed — `aps-environment` stays `development` and
+  CloudKit reads/writes the **Development** environment of the
+  container.
+- **TestFlight build** is Distribution-signed — Apple's signing flow
+  flips `aps-environment` to `production` and CloudKit reads/writes
+  the **Production** environment.
+
+The two environments don't share data. A developer who installs the
+TestFlight build over their local dev build (or vice versa) will see
+the *other* environment's data appear after sync — that's expected,
+not a bug.
+
+Because both builds share the bundle id, **only one can be installed
+on a device at a time** — TestFlight install replaces the local dev
+build and vice versa. Side-by-side coexistence (separate bundle id +
+container for dev, e.g. `cc.mnmlst.nakedpantree.dev`) is tracked
+separately; see related issues in the post-Phase-7 backlog.
+
 ### Test
 
 In Xcode: `Cmd+U` runs the app-target test bundles. Headless:
@@ -1030,3 +1055,38 @@ re-uploading (though if Apple's flow forces a key reissue,
 On the next run, `-allowProvisioningUpdates` will mint the profile
 on the fly and the Export IPA + Upload to TestFlight steps both
 succeed.
+
+### CloudKit Console shows two `CD_HouseholdEntity` rows after a fresh install on a second device
+
+**Symptom.** After installing the TestFlight build on a second
+device tied to the same iCloud account, the private zone in
+CloudKit Console contains two `CD_HouseholdEntity` records — both
+named "My Pantry" but with different `CD_id` UUIDs, created several
+seconds apart. Items added on the second device immediately after
+launch may disappear from the UI once sync settles.
+
+**Root cause.** Bootstrap (`BootstrapService.bootstrapIfNeeded()`,
+called from `RootView.runBootstrap()`) runs at app launch and
+checks the local Core Data store for an existing household. On a
+fresh install, the local store is empty *because CloudKit sync
+hasn't replicated the existing household yet* — bootstrap can't
+distinguish that from "genuinely first launch" and creates a new
+household. Sync then brings down the original household, and now
+two exist for the same user. `fetchHouseholdRow` sorts by
+`createdAt ASC` so both devices eventually pick the older
+household, leaving the newer one orphaned. Items added during the
+gap go into the orphaned household and become invisible after
+re-binding.
+
+**Fix.** Tracked as
+[#67](https://github.com/ellisandy/NakedPantree/issues/67) — needs
+real engineering (defer bootstrap until first remote-change tick
+or bounded timeout, with offline-first-launch handling). Until
+fixed, the workaround for testing is: on a fresh install of a
+second device, **wait ~30s after first launch before adding
+items** so CloudKit sync has time to replicate the existing
+household before bootstrap commits. Cleaning up orphan households
+from CloudKit Console requires manually deleting the extra
+`CD_HouseholdEntity` rows (and their associated `CD_LocationEntity`
+"Kitchen" rows) per zone — Core Data's CloudKit mirror doesn't
+cascade-delete from the dashboard side.

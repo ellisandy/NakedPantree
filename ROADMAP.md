@@ -331,7 +331,10 @@ household-shaped.
 
 ---
 
-## Phase 7 — Pre-TestFlight hardening
+## Phase 7 — Pre-TestFlight hardening ✅
+
+**Status:** Complete. CI ships every `main` merge to TestFlight; the
+internal-group install round-trips against production CloudKit.
 
 **Goal:** ship a build to TestFlight internal testers.
 
@@ -360,11 +363,19 @@ household-shaped.
 
 **Exit criteria**
 
-- [ ] An internal tester can install the build from TestFlight and use
+- [x] An internal tester can install the build from TestFlight and use
       it end-to-end (add household, share, get an expiry notification,
       attach a photo).
-- [ ] The full manual checklist passes on iPhone, iPad, and Mac.
-- [ ] CloudKit Production schema matches Development schema exactly.
+- [x] The full manual checklist passes on iPhone, iPad, and Mac.
+- [x] CloudKit Production schema matches Development schema exactly.
+
+**Known issues at close** (filed against post-Phase-7 work):
+
+- [#67](https://github.com/ellisandy/NakedPantree/issues/67) — bootstrap
+  creates a duplicate household on fresh install before CloudKit sync
+  arrives. Eventually-consistent (`fetchHouseholdRow` sorts oldest-first
+  so devices converge) but items added during the gap orphan. Must fix
+  before App Store release.
 
 **Sub-milestones**
 
