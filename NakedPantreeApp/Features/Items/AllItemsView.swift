@@ -27,6 +27,8 @@ struct AllItemsView: View {
                             .tag(item.id)
                     }
                 }
+                .scrollContentBackground(.hidden)
+                .background(Color.surface)
             }
         }
         .navigationTitle("All Items")

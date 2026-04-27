@@ -51,6 +51,8 @@ struct ExpiringSoonView: View {
                         .tag(item.id)
                     }
                 }
+                .scrollContentBackground(.hidden)
+                .background(Color.surface)
             }
         }
         .navigationTitle("Expiring Soon")

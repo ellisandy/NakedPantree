@@ -151,6 +151,8 @@ struct ItemsView: View {
                         }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.surface)
             .task(
                 id: ReloadKey(scope: id, token: remoteChangeMonitor.changeToken)
             ) {

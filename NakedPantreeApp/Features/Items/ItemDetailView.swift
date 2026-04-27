@@ -188,6 +188,8 @@ struct ItemDetailView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.surface)
     }
 
     /// Horizontal strip of secondary photos. The primary photo is

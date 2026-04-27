@@ -59,6 +59,15 @@ struct RootView: View {
                         prompt: "Search items"
                     )
                 }
+                // Phase 10.5c: brand-cream canvas under the whole shell.
+                // Each `List` / `Form` clears its own scroll background
+                // and re-fills with `Color.surface`, but the surrounding
+                // `VStack` still needs the brand fill so the safe-area
+                // insets and any compact-mode chrome read as canvas
+                // rather than the system default. Resolves via
+                // `BrandWarmCream.colorset` so dark mode lifts to
+                // `#1C1B17` without per-view branching.
+                .background(Color.surface.ignoresSafeArea())
                 // Phase 4.3: every remote-change tick (including the
                 // first cold-launch one) reconciles pending expiry
                 // notifications with the current item set. Lives inside

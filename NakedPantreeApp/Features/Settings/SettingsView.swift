@@ -41,6 +41,8 @@ struct SettingsView: View {
                 householdSection
                 expiryRemindersSection
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.surface)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
