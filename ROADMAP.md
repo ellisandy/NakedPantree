@@ -378,12 +378,12 @@ visible.
 
 | # | Title | Owner | Status |
 | --- | --- | --- | --- |
-| 7.1 | `.github/workflows/testflight-beta.yml` — archive + TestFlight upload via App Store Connect API key on every `main` merge | agent | 🟡 In review |
-| 7.2 | App Store Connect record + TestFlight internal group + default metadata stub (name, bundle id, screenshots) + three repo secrets (`APP_STORE_CONNECT_API_KEY_ID`, `..._ISSUER_ID`, `..._API_KEY`) | user | ⏳ Pending |
-| 7.3 | First green TestFlight upload from `main` that exercises every field of the dev CloudKit schema (gates 7.4) | user | ⏳ Pending |
+| 7.1 | `.github/workflows/testflight-beta.yml` — archive + TestFlight upload via App Store Connect API key on every `main` merge | agent | ✅ Merged ([apps#63](https://github.com/ellisandy/NakedPantree/pull/63), [apps#64](https://github.com/ellisandy/NakedPantree/pull/64), [apps#65](https://github.com/ellisandy/NakedPantree/pull/65)) |
+| 7.2 | App Store Connect record + TestFlight internal group + bundle ID with Push / iCloud capabilities + Admin-role API key + three repo secrets | user | ✅ Complete (verified by [run 25011950721](https://github.com/ellisandy/NakedPantree/actions/runs/25011950721) — green end-to-end upload) |
+| 7.3 | First green TestFlight upload from `main` that exercises every field of the dev CloudKit schema (gates 7.4) | user | 🟡 Upload landed; install on real device + exercise every field per `DEVELOPMENT.md` §5a step 1 still pending |
 | 7.4 | CloudKit Production schema deploy via the CloudKit Console — one-way ratchet, must follow 7.3 | user | ⏳ Pending |
 | 7.5 | Manual QA pass against `ARCHITECTURE.md` §11 checklist on iPhone, iPad, and Mac (Designed for iPad) — internal-group install, end-to-end | user | ⏳ Pending |
-| 7.6 | `DEVELOPMENT.md` §6 (Release) and §7 (Troubleshooting) fill-ins — real failure modes that surface during 7.1–7.5 | agent | ⏳ Pending |
+| 7.6 | `DEVELOPMENT.md` §6 (Release) and §7 (Troubleshooting) fill-ins — real failure modes that surface during 7.1–7.5 | agent | 🟡 In progress (§6 filled in 7.1; first three §7 entries land in this PR) |
 
 > 7.6 lands as a series of small doc PRs threaded through the rest —
 > not a one-shot at the end. The §6 / §7 TODO blocks come out as the
