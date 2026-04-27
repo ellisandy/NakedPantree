@@ -276,8 +276,8 @@ household.
 
 | # | Title | Status |
 | --- | --- | --- |
-| 5.1 | App-layer image pipeline (`ImageIO` resize + thumbnail, EXIF-correct) | 🟡 In review |
-| 5.2 | `PhotosPicker` + camera bridge + primary-photo header in `ItemDetailView` | ⏳ Pending |
+| 5.1 | App-layer image pipeline (`ImageIO` resize + thumbnail, EXIF-correct) | ✅ Merged ([apps#40](https://github.com/ellisandy/NakedPantree/pull/40)) |
+| 5.2 | `PhotosPicker` + camera bridge + primary-photo header in `ItemDetailView` | 🟡 In review |
 | 5.3 | Secondary photo strip + full-screen pager + reorder/delete-promotes-next | ⏳ Pending |
 | 5.4 | Two-device sync verification + dev schema deploy + `DEVELOPMENT.md` §5d runbook | ⏳ Pending |
 
