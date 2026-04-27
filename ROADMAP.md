@@ -572,10 +572,18 @@ run dev + TestFlight side-by-side.
 
 | # | Title | Issue | Status |
 | --- | --- | --- | --- |
-| 10.1 | Settings screen with household management | [#60](https://github.com/ellisandy/NakedPantree/issues/60) | ⏳ Pending (depends on 8.2 landing first) |
-| 10.2 | Brand color & personality pass — research → implementation | [#52](https://github.com/ellisandy/NakedPantree/issues/52) | ⏳ Pending |
-| 10.3 | Side-by-side dev + TestFlight install | [#68](https://github.com/ellisandy/NakedPantree/issues/68) | ⏳ Pending |
-| 10.4 | Filter self-emission from `RemoteChangeMonitor` via persistent-history tokens | [#28](https://github.com/ellisandy/NakedPantree/issues/28) | ⏳ Pending |
+| 10.1 | Settings screen with household management | [#60](https://github.com/ellisandy/NakedPantree/issues/60) | 🟡 In review |
+| 10.2 | Brand color & personality pass — **research only** (implementation deferred to 10.5) | [#52](https://github.com/ellisandy/NakedPantree/issues/52) | 🟡 In review |
+| 10.3 | Side-by-side dev + TestFlight install | [#68](https://github.com/ellisandy/NakedPantree/issues/68) | 🟡 In review |
+| 10.4 | Filter self-emission from `RemoteChangeMonitor` via persistent-history tokens | [#28](https://github.com/ellisandy/NakedPantree/issues/28) | 🟡 In review |
+| 10.5 | Brand-pass implementation (10 follow-up issues spawned from 10.2's research) | _to be filed from `docs/BRAND_PASS_PROPOSAL.md`_ | ⏳ Pending |
+
+> Phase 10 ran the parallel-worktrees workflow with **zero shared
+> files** between the four sub-milestones — no integration commit
+> needed (unlike Phase 9's `NotificationScheduler` quarantine). 10.2
+> deliberately ships the research proposal only; the 10 prioritized
+> implementation tasks listed in `docs/BRAND_PASS_PROPOSAL.md` get
+> filed as follow-up issues and tracked under 10.5.
 
 ---
 

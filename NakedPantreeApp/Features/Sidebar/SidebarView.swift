@@ -7,14 +7,12 @@ struct SidebarView: View {
     @Binding var selection: SidebarSelection?
     @Environment(\.repositories) private var repositories
     @Environment(\.remoteChangeMonitor) private var remoteChangeMonitor
-    @Environment(\.householdSharing) private var householdSharing
 
     @State private var locations: [Location] = []
     @State private var householdID: Household.ID?
     @State private var loadError: Error?
     @State private var formMode: LocationFormView.Mode?
     @State private var pendingDelete: Location?
-    @State private var isPresentingShareSheet = false
     @State private var isPresentingSettings = false
 
     var body: some View {
@@ -70,26 +68,13 @@ struct SidebarView: View {
                 }
                 .disabled(householdID == nil)
             }
-            // Share Household lives next to the New Location action.
-            // Hidden in previews / tests / snapshot mode where the
-            // sharing service is nil — see CloudHouseholdSharingService.
-            if householdSharing != nil {
-                ToolbarItem(placement: .secondaryAction) {
-                    Button {
-                        isPresentingShareSheet = true
-                    } label: {
-                        Label("Share Household", systemImage: "person.crop.circle.badge.plus")
-                    }
-                    .accessibilityIdentifier("sidebar.shareHousehold")
-                    .disabled(householdID == nil)
-                }
-            }
-            // Phase 9.3: Settings entry point. Lives in the secondary
-            // toolbar slot next to Share Household so the primary "+"
-            // action stays the most prominent. Always available — even
-            // in previews / tests, where the no-op `NotificationSettings`
-            // default lets the screen render without a real
-            // UserDefaults backing.
+            // Phase 9.3 introduced the Settings entry point in the
+            // secondary toolbar slot. Phase 10.1 (#60) folded household
+            // sharing into Settings, so this is now the sidebar's only
+            // secondary action. Always available — even in previews /
+            // tests, where the no-op `NotificationSettings` default
+            // lets the screen render without a real UserDefaults
+            // backing.
             ToolbarItem(placement: .secondaryAction) {
                 Button {
                     isPresentingSettings = true
@@ -102,16 +87,6 @@ struct SidebarView: View {
         .sheet(item: $formMode) { mode in
             LocationFormView(mode: mode) {
                 Task { await reload() }
-            }
-        }
-        .sheet(isPresented: $isPresentingShareSheet) {
-            if let householdID, let sharing = householdSharing {
-                CloudSharingControllerView(
-                    householdID: householdID,
-                    sharing: sharing,
-                    onCompletion: { isPresentingShareSheet = false }
-                )
-                .ignoresSafeArea()
             }
         }
         .sheet(isPresented: $isPresentingSettings) {
