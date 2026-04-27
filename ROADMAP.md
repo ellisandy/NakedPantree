@@ -234,8 +234,8 @@ household.
 | --- | --- | --- |
 | 4.1 | `NotificationScheduler` + lazy permission + scheduling on item save/delete | ✅ Merged ([apps#35](https://github.com/ellisandy/NakedPantree/pull/35)) |
 | 4.2 | Tap-to-deep-link routing (`UNUserNotificationCenterDelegate` + `RootView` navigation) | ✅ Merged ([apps#36](https://github.com/ellisandy/NakedPantree/pull/36)) |
-| 4.3 | Auto-reschedule on `NSPersistentStoreRemoteChange` (complementary to issue #28) | 🟡 In review |
-| 4.4 | Voice-review of notification copy + two-device verification runbook | ⏳ Pending |
+| 4.3 | Auto-reschedule on `NSPersistentStoreRemoteChange` (complementary to issue #28) | ✅ Merged ([apps#37](https://github.com/ellisandy/NakedPantree/pull/37)) |
+| 4.4 | Voice-review of notification copy + two-device verification runbook | 🟡 In review |
 
 ---
 
