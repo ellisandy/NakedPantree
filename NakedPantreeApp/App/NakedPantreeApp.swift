@@ -71,9 +71,7 @@ struct NakedPantreeApp: App {
                 item: CoreDataItemRepository(container: container),
                 photo: CoreDataItemPhotoRepository(container: container)
             )
-            remoteChangeMonitor = RemoteChangeMonitor(
-                coordinator: container.persistentStoreCoordinator
-            )
+            remoteChangeMonitor = RemoteChangeMonitor(container: container)
             accountStatusMonitor = AccountStatusMonitor(container: cloudKitContainer)
             householdSharing = CloudHouseholdSharingService(
                 container: container,

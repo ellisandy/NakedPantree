@@ -32,6 +32,16 @@ public enum CoreDataStack {
     /// the developer portal (see issue #23).
     public static let cloudKitContainerIdentifier = "iCloud.cc.mnmlst.nakedpantree"
 
+    /// Author label stamped onto every background context vended by
+    /// `performBackgroundTaskWithDefaults`. The Phase 2.2 remote-change
+    /// observer (issue #28) uses this to skip self-emitted notifications:
+    /// transactions whose `author == "local"` were our own save and the
+    /// form callback already triggered an explicit reload, so the token
+    /// should only bump when a transaction with a different author
+    /// (CloudKit-mirrored imports leave `author` nil) shows up in
+    /// persistent history.
+    public static let localTransactionAuthor = "local"
+
     /// Creates a disk-backed local-only container — SQLite at the OS-default
     /// location (Application Support / `<name>.sqlite`). Used by tests and
     /// any future tool that needs Core Data without iCloud.
@@ -124,14 +134,30 @@ public enum CoreDataStack {
         }
     }
 
-    /// Creates an in-memory container — the SQLite store is bound to
+    /// Creates an ephemeral test container — the SQLite store is bound to
     /// `/dev/null`, so nothing reaches disk. Used for tests and SwiftUI
     /// previews. Each call returns a fresh container with an empty store.
+    ///
+    /// **Why SQLite at `/dev/null` instead of `NSInMemoryStoreType`:**
+    /// `NSPersistentHistoryChangeRequest` (issue #28's
+    /// `RemoteChangeMonitor` filtering) is a no-op against in-memory
+    /// stores — it returns nil and tests pass spuriously. The
+    /// `/dev/null` SQLite trick is Apple's documented test recipe and
+    /// has the same "nothing reaches disk" semantics. History tracking
+    /// is enabled here so `RemoteChangeMonitorTests` can drive the
+    /// real history-fetch code path without needing a CloudKit
+    /// container.
     public static func inMemoryContainer(name: String = "NakedPantree") -> NSPersistentContainer {
         let container = NSPersistentContainer(name: name, managedObjectModel: model)
         let description = NSPersistentStoreDescription()
-        description.type = NSInMemoryStoreType
+        description.type = NSSQLiteStoreType
+        description.url = URL(fileURLWithPath: "/dev/null")
         description.shouldAddStoreAsynchronously = false
+        description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
+        description.setOption(
+            true as NSNumber,
+            forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey
+        )
         container.persistentStoreDescriptions = [description]
         var loadError: Error?
         container.loadPersistentStores { _, error in loadError = error }
