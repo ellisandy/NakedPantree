@@ -877,16 +877,43 @@ the adaptive-layout one.
 
 ## 6. Release
 
-> **TODO (Xcode Cloud setup PR):** document the Xcode Cloud workflow names
-> (PR check, TestFlight beta), the TestFlight internal group, and the App
-> Store Connect bundle ID once they exist.
-
 The shape, per `ARCHITECTURE.md` §10:
 
-- Every PR: Xcode Cloud builds and runs the test suites.
-- Merges to `main`: Xcode Cloud builds, tests, archives, uploads to
-  TestFlight (internal group).
-- App Store releases are manual until we have a reason to automate.
+- **PRs:** `build-test.yml` (build + tests on iPhone simulator) +
+  `lint.yml` (swift-format + swiftlint) — both on GitHub Actions
+  `macos-26` runners.
+- **Merges to `main`:** `testflight-beta.yml` archives, exports, and
+  uploads to TestFlight via `xcrun altool`. Same runner.
+- **App Store releases:** manual until there's a reason to automate.
+
+### TestFlight upload secrets
+
+The `testflight-beta.yml` workflow needs three repo secrets, all
+generated from a single App Store Connect API key with **App Manager**
+role:
+
+| Secret | What it is |
+| --- | --- |
+| `APP_STORE_CONNECT_API_KEY_ID` | Short identifier from the API key page (e.g. `ABCD1234EF`). |
+| `APP_STORE_CONNECT_API_ISSUER_ID` | UUID at the top of the **Users and Access → Keys** tab. |
+| `APP_STORE_CONNECT_API_KEY` | The downloaded `.p8` file, base64-encoded. Generate with `base64 -i AuthKey_*.p8 \| pbcopy` and paste as the secret value. |
+
+Code-signing certificates and provisioning profiles are **not** stored
+as secrets — `xcodebuild -allowProvisioningUpdates` regenerates them
+via the API key on every run. The `.p8` itself is decoded into the
+runner's `~/.appstoreconnect/private_keys/` directory at job start
+and disappears with the runner.
+
+### Build numbering
+
+`CFBundleVersion` is overridden to `$GITHUB_RUN_NUMBER` at archive
+time so each upload has a strictly increasing build number without
+needing a commit-back step. Marketing version
+(`CFBundleShortVersionString`) lives in
+`NakedPantreeApp/Resources/Info.plist`; bump it by hand at milestone
+boundaries.
+
+### CloudKit Production deploy
 
 CloudKit schema changes require a deliberate "Deploy to Production" step
 in the CloudKit Console **after** a TestFlight build has exercised every
