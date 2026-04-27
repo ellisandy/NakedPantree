@@ -444,9 +444,11 @@ chrome, no "+1 more" affordance for a single image.
   (via `xcodebuild -allowProvisioningUpdates -authenticationKey*` flags)
   and `xcrun altool --upload-app`. Three repo secrets:
   `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_API_ISSUER_ID`,
-  `APP_STORE_CONNECT_API_KEY` (base64-encoded `.p8`). No certificates
-  or provisioning profiles are stored as secrets — Xcode regenerates
-  them via the API key per build.
+  `APP_STORE_CONNECT_API_KEY` (the `.p8`, raw or base64). No
+  certificates or provisioning profiles are stored as secrets — Xcode
+  regenerates them via the API key per build. The Apple Team ID is
+  hardcoded in `project.yml` (it's public, not secret) so xcodebuild's
+  pre-API project-load signing check passes.
 - Build number (`CFBundleVersion`) is overridden to `$GITHUB_RUN_NUMBER`
   at archive time, keeping it monotonic without committing back to the
   repo. Marketing version (`CFBundleShortVersionString`) is bumped by
