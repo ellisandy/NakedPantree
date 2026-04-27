@@ -22,6 +22,14 @@ public actor InMemoryHouseholdRepository: HouseholdRepository {
         try await currentHousehold()
     }
 
+    /// Non-creating peek — returns whatever's currently stored without
+    /// initializing on the first call. The mock's "private store" is
+    /// just `current`, so the only thing distinguishing this from
+    /// `currentHousehold()` is the lack of side-effecting creation.
+    public func existingPrivateHousehold() async throws -> Household? {
+        current
+    }
+
     public func update(_ household: Household) async throws {
         current = household
     }

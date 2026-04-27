@@ -107,6 +107,27 @@ struct HouseholdRepositoryContractTests {
         #expect(priv.id == current.id)
         #expect(priv.name == "My Pantry")
     }
+
+    @Test(
+        "existingPrivateHousehold returns nil before any household exists, then matches once seeded",
+        arguments: RepositoryFactory.all)
+    func existingPrivateHouseholdPeekIsNonCreating(factory: RepositoryFactory) async throws {
+        // Phase 8.2 / issue #67: `BootstrapService` peeks before it
+        // commits, so the contract is "no household → nil; existing
+        // household → that row." A regression that auto-creates here
+        // would silently re-introduce the duplicate-on-fresh-install
+        // bug because bootstrap would always see a row on its first
+        // peek.
+        let bundle = factory.make()
+        let household = bundle.household
+
+        let preCreate = try await household.existingPrivateHousehold()
+        #expect(preCreate == nil)
+
+        let created = try await household.ensurePrivateHousehold()
+        let postCreate = try await household.existingPrivateHousehold()
+        #expect(postCreate?.id == created.id)
+    }
 }
 
 @Suite("LocationRepository contract")

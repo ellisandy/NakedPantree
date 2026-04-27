@@ -36,6 +36,15 @@ import SwiftUI
 final class RemoteChangeMonitor {
     private(set) var changeToken = UUID()
 
+    /// `true` for the production initializer (real coordinator);
+    /// `false` for the no-op preview/test initializer. Phase 8.2's
+    /// deferred bootstrap consults this to skip the
+    /// wait-for-first-tick race when there's no source of remote
+    /// changes — otherwise the in-memory test target would always
+    /// hit the bootstrap timeout, since the no-op monitor's
+    /// `changeToken` never bumps.
+    nonisolated let isObserving: Bool
+
     // `nonisolated(unsafe)` so `deinit` (which Swift treats as
     // nonisolated) can cancel the task. The compiler nudges to drop
     // the `(unsafe)` since `Task<Void, Never>` is Sendable, but the
@@ -54,9 +63,12 @@ final class RemoteChangeMonitor {
     /// No-op monitor for previews and tests. Never bumps `changeToken`.
     /// `nonisolated` so the `@Entry` environment default value (which
     /// must run in a non-isolated context) can construct one.
-    nonisolated init() {}
+    nonisolated init() {
+        self.isObserving = false
+    }
 
     init(coordinator: NSPersistentStoreCoordinator) {
+        self.isObserving = true
         let stream = NotificationCenter.default.notifications(
             named: .NSPersistentStoreRemoteChange,
             object: coordinator

@@ -52,6 +52,24 @@ public final class CoreDataHouseholdRepository: HouseholdRepository, @unchecked 
         }
     }
 
+    public func existingPrivateHousehold() async throws -> Household? {
+        try await container.performBackgroundTaskWithDefaults { [container] context in
+            let privateStore = CoreDataStack.privateCloudKitStore(in: container)
+            if let privateStore,
+                let existing = try Self.fetchHouseholdRow(inStore: privateStore, in: context)
+            {
+                return Self.makeHousehold(from: existing)
+            } else if privateStore == nil,
+                let existing = try Self.fetchHouseholdRow(in: context)
+            {
+                // Single-store containers (in-memory tests) — no store
+                // scoping, mirror `fetchOrCreatePrivateHousehold`'s fallback.
+                return Self.makeHousehold(from: existing)
+            }
+            return nil
+        }
+    }
+
     public func update(_ household: Household) async throws {
         try await container.performBackgroundTaskWithDefaults { [container] context in
             let row: NSManagedObject

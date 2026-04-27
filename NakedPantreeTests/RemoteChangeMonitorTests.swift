@@ -88,6 +88,20 @@ struct RemoteChangeMonitorTests {
         #expect(monitor.changeToken == initial)
     }
 
+    @Test("isObserving distinguishes the two initializers")
+    func isObservingReflectsInitializer() {
+        // Phase 8.2: `BootstrapService`'s deferred-bootstrap waiter
+        // skips the wait when `isObserving == false` because the no-op
+        // monitor will never tick. Pin both shapes here so a future
+        // refactor that drops the flag breaks loudly.
+        let noOp = RemoteChangeMonitor()
+        #expect(noOp.isObserving == false)
+
+        let container = CoreDataStack.inMemoryContainer()
+        let observing = RemoteChangeMonitor(coordinator: container.persistentStoreCoordinator)
+        #expect(observing.isObserving == true)
+    }
+
     private func waitFor(
         condition: @MainActor () -> Bool,
         timeoutNanos: UInt64
