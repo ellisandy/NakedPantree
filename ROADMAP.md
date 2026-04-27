@@ -452,7 +452,7 @@ and stops looking like a placeholder on the home screen.
 | --- | --- | --- | --- |
 | 8.1 | GitHub Actions Node 24 compatibility (bump `actions/checkout` and friends) | [#57](https://github.com/ellisandy/NakedPantree/issues/57) | ⏳ Pending |
 | 8.2 | Bootstrap defers household creation until first remote-change tick or bounded timeout | [#67](https://github.com/ellisandy/NakedPantree/issues/67) | ⏳ Pending |
-| 8.3 | Replace placeholder app icon with brand icon | [#59](https://github.com/ellisandy/NakedPantree/issues/59) | ⏳ Pending |
+| 8.3 | Replace placeholder app icon with brand icon | [#59](https://github.com/ellisandy/NakedPantree/issues/59) | 🟡 In review |
 
 > 8.1 is the time-sensitive one and the smallest — land it first.
 > 8.2 is the architectural piece; 8.3 is a one-asset swap.
