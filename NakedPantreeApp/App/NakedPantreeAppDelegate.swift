@@ -60,12 +60,9 @@ final class NakedPantreeAppDelegate:
     }
 
     /// Tap → publish parsed `itemID` to the routing service. RootView
-    /// observes and either navigates to the detail or shows the
-    /// "That item is gone" alert (item missing, e.g. another household
-    /// member deleted it before the tap). Per ARCHITECTURE.md §8 the
-    /// missing-item case should land on Expiring Soon — the smart list
-    /// is stubbed until Phase 6, so the interim is a banner alert in
-    /// place; the §8 note records the divergence.
+    /// observes and either navigates to the detail or — if the item
+    /// has been deleted — lands on Expiring Soon and shows the
+    /// "That item is gone" alert per ARCHITECTURE.md §8.
     /// `nonisolated` because `UIApplicationDelegate` makes this class
     /// implicitly main-actor-isolated, but `UNUserNotificationCenterDelegate`
     /// requirements are nonisolated. The delegate method itself does
