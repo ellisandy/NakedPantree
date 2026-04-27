@@ -6,6 +6,7 @@ import SwiftUI
 /// empty state until 1.5 / Phase 6.
 struct ItemsView: View {
     let selection: SidebarSelection?
+    let searchQuery: String
     @Binding var selectedItemID: Item.ID?
 
     @Environment(\.repositories) private var repositories
@@ -16,20 +17,37 @@ struct ItemsView: View {
     @State private var formMode: ItemFormView.Mode?
     @State private var pendingDelete: Item?
 
+    private var trimmedQuery: String {
+        searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isSearching: Bool { !trimmedQuery.isEmpty }
+
     var body: some View {
         Group {
-            switch selection {
-            case .none:
-                placeholder("Pick a list or location.")
-            case .smartList(let list):
-                smartListContent(list)
-            case .location(let id):
-                locationContent(id: id)
+            if isSearching {
+                // Phase 6.2b: a non-empty sidebar search query routes the
+                // content column to a peer mode that ignores `selection`.
+                // Clearing the field falls back to the selection-driven
+                // view below.
+                SearchResultsView(
+                    query: trimmedQuery,
+                    selectedItemID: $selectedItemID
+                )
+            } else {
+                switch selection {
+                case .none:
+                    placeholder("Pick a list or location.")
+                case .smartList(let list):
+                    smartListContent(list)
+                case .location(let id):
+                    locationContent(id: id)
+                }
             }
         }
         .navigationTitle(title)
         .toolbar {
-            if case .location(let locationID) = selection {
+            if !isSearching, case .location(let locationID) = selection {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         formMode = .create(locationID: locationID)
@@ -62,10 +80,13 @@ struct ItemsView: View {
     }
 
     private var title: String {
+        if isSearching {
+            return "Search"
+        }
         switch selection {
-        case .none: "Naked Pantree"
-        case .smartList(let list): list.title
-        case .location: locationName ?? "Location"
+        case .none: return "Naked Pantree"
+        case .smartList(let list): return list.title
+        case .location: return locationName ?? "Location"
         }
     }
 
@@ -219,7 +240,7 @@ extension NakedPantreeDomain.Unit {
     @Previewable @State var selectedItemID: Item.ID?
     let repos = Repositories.makePreview()
     NavigationStack {
-        ItemsView(selection: nil, selectedItemID: $selectedItemID)
+        ItemsView(selection: nil, searchQuery: "", selectedItemID: $selectedItemID)
     }
     .environment(\.repositories, repos)
 }

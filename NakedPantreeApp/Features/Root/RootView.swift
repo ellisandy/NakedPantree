@@ -20,6 +20,7 @@ struct RootView: View {
     // both columns; the placeholder in `ItemsView` covers the nil case.
     @State private var sidebarSelection: SidebarSelection?
     @State private var selectedItemID: Item.ID?
+    @State private var searchQuery: String = ""
     @State private var bootstrapComplete = false
     @State private var isShowingMissingItemAlert = false
     @Environment(\.repositories) private var repositories
@@ -38,11 +39,23 @@ struct RootView: View {
                     } content: {
                         ItemsView(
                             selection: sidebarSelection,
+                            searchQuery: searchQuery,
                             selectedItemID: $selectedItemID
                         )
                     } detail: {
                         ItemDetailView(itemID: selectedItemID)
                     }
+                    // Phase 6.2b: cross-household search lives on the
+                    // sidebar so a non-empty query routes the content
+                    // column to a peer "search results" mode without
+                    // adding a `SidebarSelection` case. Compact iPhone
+                    // collapses `.sidebar` placement to the navigation
+                    // bar drawer for free.
+                    .searchable(
+                        text: $searchQuery,
+                        placement: .sidebar,
+                        prompt: "Search items"
+                    )
                 }
                 // Phase 4.3: every remote-change tick (including the
                 // first cold-launch one) reconciles pending expiry

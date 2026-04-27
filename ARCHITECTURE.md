@@ -310,9 +310,11 @@ The sidebar has two sections, in this order. The pattern mirrors Apple Mail,
 Reminders, and Notes — users already know it.
 
 ```
+🔍 Search items          (.searchable on the sidebar, cross-household)
+
 Smart Lists
   ▢ Expiring Soon       (items with expiresAt within 7 days, sorted soonest)
-  ▢ All Items           (every item across every location, with search)
+  ▢ All Items           (every item across every location, sorted by name)
   ▢ Recently Added      (items added in the last 14 days)
 
 Locations
@@ -327,6 +329,14 @@ you're doing inventory cleanup you want a *single* location view (focused,
 edit-heavy). When you're deciding what to cook tonight or what's about to
 spoil, you need a *cross-household* view. The sidebar serves both modes
 without modal switching.
+
+**Search is a peer content-column mode, not a `SidebarSelection` case.**
+The sidebar `.searchable(placement: .sidebar)` lifts a `searchQuery`
+string to `RootView`. When the trimmed query is non-empty, the content
+column renders `SearchResultsView` regardless of the current sidebar
+selection; clearing the field reverts to the selection-driven view. This
+keeps `SidebarSelection` (Smart List | Location) clean and lets the
+detail column behave normally when a result is tapped.
 
 Smart Lists are pure projections — they read from the same Core Data store
 as Locations and don't introduce new entities. They are computed via
