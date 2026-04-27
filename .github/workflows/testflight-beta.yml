@@ -42,16 +42,49 @@ jobs:
       # path lets `xcodebuild -authenticationKeyPath` and
       # `xcrun altool --apiKey` find it without surfacing the secret
       # in command lines.
+      #
+      # The secret can be either the PEM text directly (starts with
+      # `-----BEGIN PRIVATE KEY-----`) or its base64 encoding. The
+      # PEM-direct path forgives the most common user mistake: pasting
+      # the `.p8` file contents into the secret value box instead of
+      # running `base64 -i AuthKey_*.p8 | pbcopy`. After writing, we
+      # sanity-check the file before letting xcodebuild's much-less-
+      # informative `keyPathInvalid` surface.
       - name: Decode App Store Connect API key
         env:
-          API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          API_KEY_RAW: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
           API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
         run: |
           set -euo pipefail
           mkdir -p ~/.appstoreconnect/private_keys
           KEY_PATH=~/.appstoreconnect/private_keys/AuthKey_$API_KEY_ID.p8
-          printf '%s' "$API_KEY_BASE64" | base64 -d > "$KEY_PATH"
+
+          if printf '%s' "$API_KEY_RAW" | head -c 32 | grep -q -- '-----BEGIN'; then
+            echo "▸ Secret looks like raw PEM — writing as-is"
+            printf '%s' "$API_KEY_RAW" > "$KEY_PATH"
+          else
+            echo "▸ Secret looks like base64 — decoding"
+            printf '%s' "$API_KEY_RAW" | base64 -d > "$KEY_PATH"
+          fi
           chmod 600 "$KEY_PATH"
+
+          SIZE=$(wc -c < "$KEY_PATH" | tr -d ' ')
+          FIRST_LINE=$(head -n 1 "$KEY_PATH")
+          LAST_LINE=$(tail -n 1 "$KEY_PATH" | tr -d '\r')
+          echo "▸ Key file: $SIZE bytes, first line: $FIRST_LINE"
+
+          if [ "$SIZE" -lt 200 ]; then
+            echo "::error::Decoded key is only $SIZE bytes — expected ~250+ for an App Store Connect .p8. Re-check APP_STORE_CONNECT_API_KEY."
+            exit 1
+          fi
+          if [ "$FIRST_LINE" != "-----BEGIN PRIVATE KEY-----" ]; then
+            echo "::error::Decoded key doesn't start with PEM header. Got: $FIRST_LINE"
+            echo "::error::Re-check APP_STORE_CONNECT_API_KEY — paste either the .p8 contents directly or its base64 encoding (see DEVELOPMENT.md §6)."
+            exit 1
+          fi
+          if [ "$LAST_LINE" != "-----END PRIVATE KEY-----" ]; then
+            echo "::warning::Decoded key tail is '$LAST_LINE' (expected '-----END PRIVATE KEY-----'). xcodebuild may still accept it; surfacing for visibility."
+          fi
 
       # `CURRENT_PROJECT_VERSION` overrides `CFBundleVersion` (build
       # number) at archive time. TestFlight requires a strictly
