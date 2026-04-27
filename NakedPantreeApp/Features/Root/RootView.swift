@@ -25,6 +25,8 @@ struct RootView: View {
     @Environment(\.repositories) private var repositories
     @Environment(\.accountStatusMonitor) private var accountStatusMonitor
     @Environment(\.notificationRouting) private var notificationRouting
+    @Environment(\.remoteChangeMonitor) private var remoteChangeMonitor
+    @Environment(\.notificationScheduler) private var notificationScheduler
 
     var body: some View {
         Group {
@@ -41,6 +43,14 @@ struct RootView: View {
                     } detail: {
                         ItemDetailView(itemID: selectedItemID)
                     }
+                }
+                // Phase 4.3: every remote-change tick (including the
+                // first cold-launch one) reconciles pending expiry
+                // notifications with the current item set. Lives inside
+                // the `bootstrapComplete` branch so it never runs before
+                // `currentHousehold()` has anything to return.
+                .task(id: remoteChangeMonitor.changeToken) {
+                    await resyncExpiryNotifications()
                 }
             } else {
                 Color.brandWarmCream
@@ -124,6 +134,20 @@ struct RootView: View {
             // hiccup. Keep the user where they were rather than dumping
             // them into an alert; if it was a real bug, the next tap or
             // remote-change tick will reload state.
+        }
+    }
+
+    /// Reconciles pending notification requests with the current item
+    /// set. A read failure leaves the existing requests alone — better
+    /// than nuking pending notifications on a transient hiccup.
+    private func resyncExpiryNotifications() async {
+        do {
+            let household = try await repositories.household.currentHousehold()
+            let items = try await repositories.item.allItems(in: household.id)
+            await notificationScheduler.resync(currentItems: items)
+        } catch {
+            // Swallow — see comment above. The next changeToken tick
+            // will retry.
         }
     }
 }

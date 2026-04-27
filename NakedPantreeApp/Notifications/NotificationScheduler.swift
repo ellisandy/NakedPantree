@@ -59,13 +59,57 @@ func expiryNotificationTriggerDate(
     return target > now ? target : nil
 }
 
+/// Parses the item UUID out of a notification identifier produced by
+/// `NotificationScheduler.identifier(for:)`. Returns `nil` for any
+/// identifier that doesn't match the `"item.<uuid>.expiry"` shape —
+/// keeps the resync sweep tolerant of stray identifiers a future
+/// scheduler variant might add (e.g. low-stock alerts in Phase 6).
+///
+/// Pure function so tests can pin both the parse and the diff logic
+/// without touching `UNUserNotificationCenter`.
+func parseExpiryNotificationItemID(fromIdentifier identifier: String) -> UUID? {
+    let parts = identifier.split(separator: ".", omittingEmptySubsequences: false)
+    guard parts.count == 3, parts[0] == "item", parts[2] == "expiry" else {
+        return nil
+    }
+    return UUID(uuidString: String(parts[1]))
+}
+
+/// Returns the set of pending notification identifiers that should be
+/// cancelled because the underlying item no longer appears in the
+/// current item set. Identifiers we don't recognize as item-expiry
+/// notifications (e.g. future low-stock alerts) are passed through
+/// untouched — the resync sweep stays narrowly scoped to its own kind.
+///
+/// Pure free function over two id sets so the diff logic is unit-testable
+/// without standing up a `UNUserNotificationCenter`.
+func staleExpiryIdentifiers(
+    pending: [String],
+    currentItemIDs: Set<UUID>
+) -> [String] {
+    pending.filter { identifier in
+        guard let itemID = parseExpiryNotificationItemID(fromIdentifier: identifier) else {
+            return false
+        }
+        return !currentItemIDs.contains(itemID)
+    }
+}
+
 /// Schedules and cancels local expiry notifications for items.
 ///
 /// Phase 4.1: callers (`ItemFormView.save()`, `ItemsView.delete()`)
-/// invoke the scheduler directly after a write succeeds. Phase 4.2
-/// will add `NSManagedObjectContextDidSave` / `NSPersistentStoreRemoteChange`
-/// observation so a remote-side edit reschedules without a local UI
-/// round-trip.
+/// invoke the scheduler directly after a write succeeds — the
+/// low-latency local fast path. Phase 4.3 adds `resync(currentItems:)`,
+/// driven by the `NSPersistentStoreRemoteChange` observer
+/// (`RemoteChangeMonitor.changeToken`) wired in `RootView`. The two
+/// paths are intentionally redundant: form callbacks fire immediately
+/// without the observer's debounce; the observer is the correctness
+/// backstop for remote changes and cold-launch backfill. Both ride
+/// the same idempotent `scheduleIfNeeded`, so the overlap costs only
+/// a few CPU cycles. Issue #28 (history-token bookkeeping) would let
+/// the observer skip locally-authored transactions and remove the
+/// redundancy without changing observable behavior — complementary,
+/// not blocking.
 ///
 /// **Identifier scheme:** `"item.\(item.id.uuidString).expiry"` — adding
 /// the same identifier replaces any pending request, so re-saving an
@@ -162,6 +206,57 @@ final class NotificationScheduler {
     func cancel(itemID: Item.ID) {
         guard let center else { return }
         center.removePendingNotificationRequests(withIdentifiers: [Self.identifier(for: itemID)])
+    }
+
+    /// Brings pending expiry notifications into agreement with the
+    /// current set of items.
+    ///
+    /// Drives:
+    /// - re-schedule each existing item via `scheduleIfNeeded` (idempotent
+    ///   — replaces the pending request when expiry changed, removes it
+    ///   when expiry was cleared, no-ops when nothing changed)
+    /// - cancel pending expiry requests whose underlying item no longer
+    ///   exists (remote delete from another household member)
+    ///
+    /// Called from `RootView` on every `RemoteChangeMonitor.changeToken`
+    /// tick. The first tick fires at cold launch — that's intentional:
+    /// it backfills "user reinstalled," "user re-granted notification
+    /// permission," and "remote changes happened while backgrounded
+    /// for weeks." The cost is O(items) + O(pending requests) per pass;
+    /// fine for typical pantry sizes. The reschedule loop is serial:
+    /// each `scheduleIfNeeded` awaits a settings check then `add`, and
+    /// `TaskGroup`-style fan-out would race the `.notDetermined` path.
+    /// After the gate below fires, the per-item path is fast.
+    ///
+    /// **Permission gate.** A blanket `.notDetermined` bail at the top
+    /// keeps this background sweep from triggering the permission
+    /// prompt — a cold launch with seeded items would otherwise call
+    /// `scheduleIfNeeded` → `ensureAuthorization` → `requestAuthorization`,
+    /// breaking Phase 4.1's "lazy. We never prompt at launch" contract.
+    /// The explicit form-save path (`scheduleIfNeeded` direct) keeps
+    /// its prompt because that's the contextual moment.
+    func resync(currentItems: [Item]) async {
+        guard let center else { return }
+        let settings = await center.notificationSettings()
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral:
+            break
+        case .notDetermined, .denied:
+            // Sweep is a background reconciliation, not a contextual
+            // moment. Bail rather than prompt.
+            return
+        @unknown default:
+            return
+        }
+        for item in currentItems {
+            await scheduleIfNeeded(for: item)
+        }
+        let pending = await center.pendingNotificationRequests().map(\.identifier)
+        let currentIDs = Set(currentItems.map(\.id))
+        let stale = staleExpiryIdentifiers(pending: pending, currentItemIDs: currentIDs)
+        if !stale.isEmpty {
+            center.removePendingNotificationRequests(withIdentifiers: stale)
+        }
     }
 
     private func ensureAuthorization(center: UNUserNotificationCenter) async -> Bool {
