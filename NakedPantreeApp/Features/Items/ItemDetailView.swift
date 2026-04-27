@@ -18,6 +18,7 @@ struct ItemDetailView: View {
     @State private var isPresentingCamera = false
     @State private var isSavingPhoto = false
     @State private var photoErrorMessage: String?
+    @State private var pagerStartIndex: Int?
 
     var body: some View {
         Group {
@@ -55,6 +56,14 @@ struct ItemDetailView: View {
         .sheet(item: $formMode) { mode in
             ItemFormView(mode: mode) {
                 Task { await reload() }
+            }
+        }
+        .sheet(item: pagerItemBinding) { startIndex in
+            PhotoPagerView(
+                photos: photos,
+                initialIndex: startIndex.value
+            ) { photo in
+                Task { await deletePhoto(photo) }
             }
         }
         .sheet(isPresented: $isPresentingCamera) {
@@ -111,13 +120,27 @@ struct ItemDetailView: View {
         Form {
             if let primary = photos.first, let uiImage = primary.uiImage {
                 Section {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 240)
-                        .clipped()
-                        .accessibilityLabel(Text("Photo of \(item.name)"))
+                    Button {
+                        pagerStartIndex = 0
+                    } label: {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 240)
+                            .clipped()
+                            .contentShape(Rectangle())
+                            .accessibilityLabel(Text("Photo of \(item.name)"))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("itemDetail.primaryPhoto")
+                }
+                .listRowInsets(EdgeInsets())
+            }
+
+            if photos.count >= 2 {
+                Section {
+                    photoStrip
                 }
                 .listRowInsets(EdgeInsets())
             }
@@ -148,6 +171,79 @@ struct ItemDetailView: View {
                 }
             }
         }
+    }
+
+    /// Horizontal strip of secondary photos. The primary photo is
+    /// already shown in the header section above, so the strip starts
+    /// at index 1. Each tile uses `thumbnailData` (decoded ~256 px)
+    /// rather than the full `imageData` — list-row decode of multiple
+    /// 2048 px JPEGs would hitch on appearance per Phase 5 exit
+    /// criterion #2.
+    @ViewBuilder
+    private var photoStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                    if index >= 1 {
+                        photoStripTile(for: photo, at: index)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+    }
+
+    @ViewBuilder
+    private func photoStripTile(for photo: ItemPhoto, at index: Int) -> some View {
+        Button {
+            pagerStartIndex = index
+        } label: {
+            Group {
+                if let uiImage = photo.thumbnailUIImage {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    // Thumbnail decode failed — show a neutral
+                    // placeholder rather than a broken-image icon
+                    // (this strip is meant to be glanceable, not a
+                    // diagnostic surface).
+                    Color.secondary.opacity(0.2)
+                }
+            }
+            .frame(width: 64, height: 64)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button {
+                Task { await makePrimary(photo) }
+            } label: {
+                Label("Make Primary", systemImage: "star")
+            }
+            Button(role: .destructive) {
+                Task { await deletePhoto(photo) }
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .accessibilityIdentifier("itemDetail.photoStrip.tile.\(index)")
+    }
+
+    /// Bridges the optional `Int` start index into a sheet-`item:`
+    /// binding. The wrapper struct gives `Identifiable` conformance to
+    /// the bare integer.
+    private var pagerItemBinding: Binding<PagerStartIndex?> {
+        Binding(
+            get: {
+                guard let index = pagerStartIndex else { return nil }
+                return PagerStartIndex(value: index)
+            },
+            set: { newValue in
+                pagerStartIndex = newValue?.value
+            }
+        )
     }
 
     @ViewBuilder
@@ -213,6 +309,36 @@ struct ItemDetailView: View {
         }
     }
 
+    /// Deletes a photo and reloads. The repository handles the row
+    /// removal; promote-on-primary-delete falls out for free because
+    /// the strip resorts by sortOrder ascending — the next photo
+    /// (lowest remaining sortOrder) becomes `photos.first` on the
+    /// next reload.
+    private func deletePhoto(_ photo: ItemPhoto) async {
+        do {
+            try await repositories.photo.delete(id: photo.id)
+            await reload()
+        } catch {
+            photoErrorMessage = "Try again."
+        }
+    }
+
+    /// Promotes a non-primary photo to the primary slot. The promote
+    /// service writes a single row with `currentMin - 1` so reorder
+    /// stays an O(1) write rather than an N-row renumber pass.
+    private func makePrimary(_ photo: ItemPhoto) async {
+        do {
+            _ = try await makePhotoPrimary(
+                photo,
+                among: photos,
+                repository: repositories.photo
+            )
+            await reload()
+        } catch {
+            photoErrorMessage = "Try again."
+        }
+    }
+
     private func saveLibraryPick(_ selection: PhotosPickerItem, itemID: Item.ID) async {
         isSavingPhoto = true
         defer {
@@ -242,13 +368,30 @@ struct ItemDetailView: View {
 extension ItemPhoto {
     /// Decoded `UIImage` for the persisted full-resolution data, or
     /// `nil` if the bytes couldn't be parsed (corruption, schema
-    /// mismatch from a version skew, etc.). The thumbnail field could
-    /// be substituted here if `imageData` reads start to dominate
-    /// detail-view appearance time — measure first.
+    /// mismatch from a version skew, etc.). Used for the primary
+    /// header in the detail view.
     fileprivate var uiImage: UIImage? {
         guard let imageData else { return nil }
         return UIImage(data: imageData)
     }
+
+    /// Decoded thumbnail for strip-row display. Reading the smaller
+    /// inline blob keeps strip appearance hitch-free even with a
+    /// five-photo item per Phase 5 exit criterion #2.
+    fileprivate var thumbnailUIImage: UIImage? {
+        guard let thumbnailData else { return nil }
+        return UIImage(data: thumbnailData)
+    }
+}
+
+/// Identifiable wrapper so the `pagerStartIndex` `Int?` can drive a
+/// `sheet(item:)` modifier — the modifier's identity-based reset
+/// behavior is exactly what we want when the user taps a different
+/// strip tile (sheet re-presents at the new index instead of staying
+/// stuck on the old one).
+private struct PagerStartIndex: Identifiable, Hashable {
+    let value: Int
+    var id: Int { value }
 }
 
 #Preview("Empty") {
