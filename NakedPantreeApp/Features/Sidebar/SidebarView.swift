@@ -15,6 +15,7 @@ struct SidebarView: View {
     @State private var formMode: LocationFormView.Mode?
     @State private var pendingDelete: Location?
     @State private var isPresentingShareSheet = false
+    @State private var isPresentingSettings = false
 
     var body: some View {
         List(selection: $selection) {
@@ -83,6 +84,20 @@ struct SidebarView: View {
                     .disabled(householdID == nil)
                 }
             }
+            // Phase 9.3: Settings entry point. Lives in the secondary
+            // toolbar slot next to Share Household so the primary "+"
+            // action stays the most prominent. Always available — even
+            // in previews / tests, where the no-op `NotificationSettings`
+            // default lets the screen render without a real
+            // UserDefaults backing.
+            ToolbarItem(placement: .secondaryAction) {
+                Button {
+                    isPresentingSettings = true
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .accessibilityIdentifier("settings.toolbar.entry")
+            }
         }
         .sheet(item: $formMode) { mode in
             LocationFormView(mode: mode) {
@@ -98,6 +113,9 @@ struct SidebarView: View {
                 )
                 .ignoresSafeArea()
             }
+        }
+        .sheet(isPresented: $isPresentingSettings) {
+            SettingsView()
         }
         .confirmationDialog(
             deleteConfirmationTitle,

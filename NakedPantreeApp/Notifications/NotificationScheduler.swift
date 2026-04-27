@@ -33,13 +33,19 @@ func expiryNotificationBodyCopy(expiresAt: Date, relativeTo reference: Date) -> 
 /// closed; the UI still shows the expiry itself).
 ///
 /// Lead time matches `ARCHITECTURE.md` §8: 3 days before `expiresAt`,
-/// fired at 9:00 in the user's local calendar. DST boundaries are
-/// handled by `Calendar.date(bySettingHour:minute:second:of:)`, which
-/// resolves to the wall-clock hour rather than a fixed UTC offset.
+/// fired at the user's chosen reminder time (Phase 9.3 — wall-clock
+/// hour and minute) in the local calendar. DST boundaries are handled
+/// by `Calendar.date(bySettingHour:minute:second:of:)`, which resolves
+/// to the wall-clock hour rather than a fixed UTC offset.
+///
+/// Phase 9.3 added the `minute` parameter so users can pick non-on-the-
+/// hour reminder times like 7:30 PM. Pre-existing callers default to
+/// `minute: 0`, matching the previous hardcoded behavior.
 func expiryNotificationTriggerDate(
     expiresAt: Date,
     leadDays: Int = 3,
     hourOfDay: Int = 9,
+    minute: Int = 0,
     calendar: Calendar = .current,
     now: Date = .now
 ) -> Date? {
@@ -49,7 +55,7 @@ func expiryNotificationTriggerDate(
     guard
         let target = calendar.date(
             bySettingHour: hourOfDay,
-            minute: 0,
+            minute: minute,
             second: 0,
             of: leadDay
         )
@@ -57,6 +63,42 @@ func expiryNotificationTriggerDate(
         return nil
     }
     return target > now ? target : nil
+}
+
+/// Recognizes a notification identifier as one this scheduler owns —
+/// either the per-item shape (`item.<uuid>.expiry`) or the Phase 9.4
+/// rollup shape (`day.<yyyyMMdd>.expiry`). The bundle-aware resync
+/// sweep uses this to filter out third-party identifiers (future
+/// low-stock alerts, share-related notifications) before computing
+/// "stale relative to the expected set."
+///
+/// Pure free function so it stays unit-testable without standing up
+/// `UNUserNotificationCenter`.
+func isExpiryNotificationIdentifier(_ identifier: String) -> Bool {
+    let parts = identifier.split(separator: ".", omittingEmptySubsequences: false)
+    guard parts.count == 3, parts[2] == "expiry" else { return false }
+    if parts[0] == "item" {
+        return UUID(uuidString: String(parts[1])) != nil
+    }
+    if parts[0] == "day" {
+        return parts[1].count == 8 && parts[1].allSatisfy(\.isNumber)
+    }
+    return false
+}
+
+/// Bundle-aware stale-identifier sweep used by `resync(currentItems:)`
+/// after Phase 9.4. Returns pending identifiers that look like ours
+/// (per `isExpiryNotificationIdentifier`) but aren't in the expected
+/// set produced by `bundleSameDayExpiries`. Identifiers we don't
+/// recognize pass through untouched, same as the per-item-only
+/// `staleExpiryIdentifiers` did.
+func staleBundleIdentifiers(
+    pending: [String],
+    expected: Set<String>
+) -> [String] {
+    pending.filter { identifier in
+        isExpiryNotificationIdentifier(identifier) && !expected.contains(identifier)
+    }
 }
 
 /// Parses the item UUID out of a notification identifier produced by
@@ -137,6 +179,13 @@ final class NotificationScheduler {
     /// the relaxation, not the underlying API.
     nonisolated(unsafe) private let center: UNUserNotificationCenter?
 
+    /// Phase 9.3: optional reference to the user's notification
+    /// preferences. Drives the wall-clock reminder time. `nil` for
+    /// previews / tests / EMPTY_STORE / unit-test host paths, where
+    /// the default 9:00 AM (matching the pre-9.3 hardcoded value)
+    /// preserves existing behavior.
+    private let settings: NotificationSettings?
+
     /// No-op scheduler for previews and tests. `nonisolated` so the
     /// `@Entry` default value (built in a non-isolated context) can
     /// call it. The trick is similar in spirit to
@@ -145,10 +194,30 @@ final class NotificationScheduler {
     /// settable from a non-isolated init.
     nonisolated init() {
         self.center = nil
+        self.settings = nil
     }
 
-    init(center: UNUserNotificationCenter) {
+    /// Production initializer. `settings` is optional so callers that
+    /// want the previous hardcoded 9:00 AM behavior (e.g. tests that
+    /// don't care about the picker) can still construct without one.
+    /// `NakedPantreeApp` always passes a real one in production.
+    init(center: UNUserNotificationCenter, settings: NotificationSettings? = nil) {
         self.center = center
+        self.settings = settings
+    }
+
+    /// Reads the current reminder hour from settings, falling back to
+    /// the pre-9.3 hardcoded value when no settings store is wired.
+    /// `@MainActor`-isolated like the class itself, since
+    /// `NotificationSettings` is `@Observable @MainActor`.
+    private var reminderHour: Int {
+        settings?.hourOfDay ?? NotificationSettings.defaultHourOfDay
+    }
+
+    /// Reads the current reminder minute. Same fallback shape as
+    /// `reminderHour`.
+    private var reminderMinute: Int {
+        settings?.minute ?? NotificationSettings.defaultMinute
     }
 
     /// Idempotent. Re-running with the same item replaces any pending
@@ -163,7 +232,13 @@ final class NotificationScheduler {
             return
         }
 
-        guard let triggerDate = expiryNotificationTriggerDate(expiresAt: expiresAt) else {
+        guard
+            let triggerDate = expiryNotificationTriggerDate(
+                expiresAt: expiresAt,
+                hourOfDay: reminderHour,
+                minute: reminderMinute
+            )
+        else {
             // Lead-time window has passed. Drop any older request that
             // might still be pending from a previous expiry value.
             center.removePendingNotificationRequests(withIdentifiers: [id])
@@ -211,30 +286,29 @@ final class NotificationScheduler {
     /// Brings pending expiry notifications into agreement with the
     /// current set of items.
     ///
-    /// Drives:
-    /// - re-schedule each existing item via `scheduleIfNeeded` (idempotent
-    ///   — replaces the pending request when expiry changed, removes it
-    ///   when expiry was cleared, no-ops when nothing changed)
-    /// - cancel pending expiry requests whose underlying item no longer
-    ///   exists (remote delete from another household member)
+    /// Phase 9.4: items are bundled by local-calendar day before
+    /// scheduling. A day with N items produces one rollup notification
+    /// (`day.<yyyyMMdd>.expiry`) instead of N per-item banners; a day
+    /// with one item still produces a single-item notification using
+    /// the same `item.<uuid>.expiry` identifier `scheduleIfNeeded`
+    /// produces, so a day collapsing N → 1 hands off cleanly without
+    /// a special case. The form-save fast-path (`scheduleIfNeeded`
+    /// direct) still emits per-item; the next remote-change tick's
+    /// resync converges to the bundled shape, cancelling the now-
+    /// stale per-item request via the `staleBundleIdentifiers` sweep.
     ///
     /// Called from `RootView` on every `RemoteChangeMonitor.changeToken`
     /// tick. The first tick fires at cold launch — that's intentional:
     /// it backfills "user reinstalled," "user re-granted notification
     /// permission," and "remote changes happened while backgrounded
-    /// for weeks." The cost is O(items) + O(pending requests) per pass;
-    /// fine for typical pantry sizes. The reschedule loop is serial:
-    /// each `scheduleIfNeeded` awaits a settings check then `add`, and
-    /// `TaskGroup`-style fan-out would race the `.notDetermined` path.
-    /// After the gate below fires, the per-item path is fast.
+    /// for weeks." The cost is O(bundles) + O(pending) per pass.
     ///
     /// **Permission gate.** A blanket `.notDetermined` bail at the top
     /// keeps this background sweep from triggering the permission
-    /// prompt — a cold launch with seeded items would otherwise call
-    /// `scheduleIfNeeded` → `ensureAuthorization` → `requestAuthorization`,
-    /// breaking Phase 4.1's "lazy. We never prompt at launch" contract.
-    /// The explicit form-save path (`scheduleIfNeeded` direct) keeps
-    /// its prompt because that's the contextual moment.
+    /// prompt — a cold launch with seeded items would otherwise hit
+    /// `requestAuthorization` and break Phase 4.1's "lazy. We never
+    /// prompt at launch" contract. The form-save path keeps its
+    /// prompt because that's the contextual moment.
     func resync(currentItems: [Item]) async {
         guard let center else { return }
         let settings = await center.notificationSettings()
@@ -248,14 +322,77 @@ final class NotificationScheduler {
         @unknown default:
             return
         }
-        for item in currentItems {
-            await scheduleIfNeeded(for: item)
+
+        let bundles = bundleSameDayExpiries(
+            currentItems,
+            reminderHour: reminderHour,
+            reminderMinute: reminderMinute
+        )
+        for bundle in bundles {
+            await scheduleBundle(bundle, on: center)
         }
+
         let pending = await center.pendingNotificationRequests().map(\.identifier)
-        let currentIDs = Set(currentItems.map(\.id))
-        let stale = staleExpiryIdentifiers(pending: pending, currentItemIDs: currentIDs)
+        let expected = Set(bundles.map(\.identifier))
+        let stale = staleBundleIdentifiers(pending: pending, expected: expected)
         if !stale.isEmpty {
             center.removePendingNotificationRequests(withIdentifiers: stale)
+        }
+    }
+
+    /// Converts a bundle into a `UNNotificationRequest` and registers
+    /// it. Bundles whose computed lead trigger has already passed
+    /// (`firesImmediately`) use a short `UNTimeIntervalNotificationTrigger`;
+    /// future bundles use `UNCalendarNotificationTrigger` so the system
+    /// fires at the wall-clock minute the user chose, even if the
+    /// device is off then.
+    ///
+    /// `userInfo` carries the first item's id so the existing tap-routing
+    /// (`NotificationRoutingService`) keeps working — multi-item bundles
+    /// land on the first item's detail; single-item bundles land on
+    /// that item, same as before.
+    private func scheduleBundle(
+        _ bundle: ExpiryNotificationBundle,
+        on center: UNUserNotificationCenter
+    ) async {
+        guard await ensureAuthorization(center: center) else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = bundle.title
+        content.body = bundle.body
+        content.sound = .default
+        if let leadID = bundle.itemIDs.first {
+            content.userInfo = ["itemID": leadID.uuidString]
+        }
+
+        let trigger: UNNotificationTrigger
+        if bundle.firesImmediately {
+            // `UNTimeIntervalNotificationTrigger` requires ≥1s; the
+            // bundling function already pads to `now + 60s` so this
+            // is comfortable.
+            let interval = max(1.0, bundle.triggerDate.timeIntervalSinceNow)
+            trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
+        } else {
+            let components = Calendar.current.dateComponents(
+                [.year, .month, .day, .hour, .minute],
+                from: bundle.triggerDate
+            )
+            trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        }
+
+        let request = UNNotificationRequest(
+            identifier: bundle.identifier,
+            content: content,
+            trigger: trigger
+        )
+
+        do {
+            try await center.add(request)
+        } catch {
+            // No remediation path — `.add` rejects only on system
+            // throttling or denied authorization that flipped between
+            // our check and the call. Silent skip; user has expiry in
+            // the UI either way.
         }
     }
 

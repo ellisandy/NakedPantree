@@ -19,6 +19,7 @@ struct ItemDetailView: View {
     @State private var isSavingPhoto = false
     @State private var photoErrorMessage: String?
     @State private var pagerStartIndex: Int?
+    @State private var quantityModel: QuantityStepperModel?
 
     var body: some View {
         Group {
@@ -104,6 +105,15 @@ struct ItemDetailView: View {
         .task(id: ReloadKey(scope: itemID, token: remoteChangeMonitor.changeToken)) {
             await reload()
         }
+        .onDisappear {
+            // Flush any pending debounced quantity write so leaving
+            // the detail screen never strands the user's last tap.
+            // The captured model holds its own state — fine to
+            // outlive `self` view value here.
+            if let quantityModel {
+                Task { await quantityModel.flush() }
+            }
+        }
     }
 
     private var photoErrorBinding: Binding<Bool> {
@@ -146,7 +156,14 @@ struct ItemDetailView: View {
             }
 
             Section("Quantity") {
-                Text("\(item.quantity) \(item.unit.displayLabel)")
+                if let quantityModel {
+                    QuantityStepperControl(model: quantityModel, unit: item.unit)
+                } else {
+                    // Brief render before `.task` wires the model up —
+                    // fall back to the read-only label so layout
+                    // doesn't pop in.
+                    Text("\(item.quantity) \(item.unit.displayLabel)")
+                }
             }
 
             if let expiresAt = item.expiresAt {
@@ -282,18 +299,72 @@ struct ItemDetailView: View {
         guard let itemID else {
             item = nil
             photos = []
+            quantityModel = nil
             return
         }
         do {
-            item = try await repositories.item.item(id: itemID)
+            let fetched = try await repositories.item.item(id: itemID)
+            item = fetched
             photos = try await repositories.photo.photos(for: itemID)
+            if let fetched {
+                rebindQuantityModel(for: fetched)
+            } else {
+                quantityModel = nil
+            }
         } catch {
             item = nil
             photos = []
+            quantityModel = nil
         }
     }
 
-    private func saveCameraImage(_ image: UIImage, itemID: Item.ID) async {
+    /// Lazily creates the stepper model on first load and afterwards
+    /// just resets its baseline to the freshly-fetched quantity. We
+    /// don't recreate the model on every reload — re-creating it
+    /// would clobber whatever optimistic value the user just tapped
+    /// in if the reload fires mid-debounce.
+    @MainActor
+    private func rebindQuantityModel(for fetched: Item) {
+        if let existing = quantityModel {
+            // If the user is mid-burst and their optimistic value
+            // hasn't drained to the repo yet, keep the in-flight
+            // value — the next debounce will write it. Otherwise
+            // accept the freshly-fetched canonical quantity (e.g.
+            // from a CloudKit push or an edit-form save).
+            if !existing.hasPendingWrite {
+                existing.reset(to: fetched.quantity)
+            }
+        } else {
+            let repository = repositories.item
+            quantityModel = QuantityStepperModel(
+                initialQuantity: fetched.quantity,
+                persist: { newQuantity in
+                    // Re-fetch under the actor so we don't write a
+                    // stale `name` / `expiresAt` if those were
+                    // edited in another window. If the row vanished
+                    // between tap and write, drop the update — the
+                    // detail view's reload will catch up.
+                    guard var current = try await repository.item(id: fetched.id) else {
+                        return
+                    }
+                    current.quantity = newQuantity
+                    try await repository.update(current)
+                },
+                onPersistFailure: {
+                    Task { await reload() }
+                }
+            )
+        }
+    }
+
+}
+
+/// Photo-attachment side-effects. Lives in an extension so the main
+/// struct body stays under SwiftLint's `type_body_length` ceiling —
+/// these are independent of the rest of the detail screen's state and
+/// only touch the photo repository plus a couple of `@State` flags.
+extension ItemDetailView {
+    fileprivate func saveCameraImage(_ image: UIImage, itemID: Item.ID) async {
         isSavingPhoto = true
         defer { isSavingPhoto = false }
         do {
@@ -314,7 +385,7 @@ struct ItemDetailView: View {
     /// the strip resorts by sortOrder ascending — the next photo
     /// (lowest remaining sortOrder) becomes `photos.first` on the
     /// next reload.
-    private func deletePhoto(_ photo: ItemPhoto) async {
+    fileprivate func deletePhoto(_ photo: ItemPhoto) async {
         do {
             try await repositories.photo.delete(id: photo.id)
             await reload()
@@ -326,7 +397,7 @@ struct ItemDetailView: View {
     /// Promotes a non-primary photo to the primary slot. The promote
     /// service writes a single row with `currentMin - 1` so reorder
     /// stays an O(1) write rather than an N-row renumber pass.
-    private func makePrimary(_ photo: ItemPhoto) async {
+    fileprivate func makePrimary(_ photo: ItemPhoto) async {
         do {
             _ = try await makePhotoPrimary(
                 photo,
@@ -339,7 +410,7 @@ struct ItemDetailView: View {
         }
     }
 
-    private func saveLibraryPick(_ selection: PhotosPickerItem, itemID: Item.ID) async {
+    fileprivate func saveLibraryPick(_ selection: PhotosPickerItem, itemID: Item.ID) async {
         isSavingPhoto = true
         defer {
             isSavingPhoto = false

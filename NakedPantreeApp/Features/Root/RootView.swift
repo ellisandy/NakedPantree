@@ -9,9 +9,11 @@ import SwiftUI
 /// `AllItemsView`) cache their fetch in `@State` and only refetch on
 /// their own `.task`. To keep first-launch bootstrap from racing those
 /// caches — the original Kitchen-doesn't-appear-on-fresh-install bug —
-/// we gate the whole shell on `bootstrapComplete`. The brief
-/// brand-color splash is acceptable for an in-memory + one-row
-/// Core Data write that completes in single-digit milliseconds.
+/// we gate the whole shell on `bootstrapComplete`. The pre-bootstrap
+/// state shows `LaunchView` (Phase 9.2) so the user sees the wordmark
+/// + a progress indicator instead of a blank cream surface — Phase 8.2
+/// bootstrap-defer made the wait long enough on fresh install + slow
+/// sync that a static color reads as a hung app.
 struct RootView: View {
     // Initial selection is `nil` so iPhone (compact `NavigationSplitView`)
     // lands the user on the sidebar — defaulting to a smart list there
@@ -66,8 +68,7 @@ struct RootView: View {
                     await resyncExpiryNotifications()
                 }
             } else {
-                Color.brandWarmCream
-                    .ignoresSafeArea()
+                LaunchView()
             }
         }
         .task {

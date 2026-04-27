@@ -16,6 +16,7 @@ struct NakedPantreeApp: App {
     private let householdSharing: CloudHouseholdSharingService?
     private let notificationScheduler: NotificationScheduler
     private let notificationRouting: NotificationRoutingService
+    private let notificationSettings: NotificationSettings
 
     init() {
         // Phase 4.2: a single routing service across all branches —
@@ -34,6 +35,7 @@ struct NakedPantreeApp: App {
             accountStatusMonitor = AccountStatusMonitor()
             householdSharing = nil
             notificationScheduler = NotificationScheduler()
+            notificationSettings = NotificationSettings()
         } else if ProcessInfo.processInfo.environment["EMPTY_STORE"] == "1" {
             // UI-test escape hatch: empty in-memory repos that exercise
             // the real bootstrap flow without persisting anything to
@@ -44,6 +46,7 @@ struct NakedPantreeApp: App {
             accountStatusMonitor = AccountStatusMonitor()
             householdSharing = nil
             notificationScheduler = NotificationScheduler()
+            notificationSettings = NotificationSettings()
         } else if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
             // Unit tests load us via BUNDLE_LOADER, but the simulator has
             // no iCloud account so `cloudKitContainer()` would fail to
@@ -54,6 +57,7 @@ struct NakedPantreeApp: App {
             accountStatusMonitor = AccountStatusMonitor()
             householdSharing = nil
             notificationScheduler = NotificationScheduler()
+            notificationSettings = NotificationSettings()
         } else {
             // Phase 2.1: production stack is CloudKit-mirrored. Phase 3
             // adds the sharing service against the same container.
@@ -81,7 +85,15 @@ struct NakedPantreeApp: App {
             // invite. The delegate is instantiated by the system before
             // this init runs, so a static var is the simplest seam.
             NakedPantreeAppDelegate.shareAcceptance = CloudShareAcceptance(container: container)
-            notificationScheduler = NotificationScheduler(center: .current())
+            // Phase 9.3: persisted reminder time, constructed before
+            // the scheduler so it can read `settings.hourOfDay` /
+            // `.minute` when scheduling and when bundling same-day
+            // expiries (Phase 9.4 integration).
+            notificationSettings = NotificationSettings(defaults: .standard)
+            notificationScheduler = NotificationScheduler(
+                center: .current(),
+                settings: notificationSettings
+            )
         }
         // Phase 4.2: the delegate routes notification taps into this
         // service. Same static-var pattern as `shareAcceptance` —
@@ -99,6 +111,7 @@ struct NakedPantreeApp: App {
                 .environment(\.householdSharing, householdSharing)
                 .environment(\.notificationScheduler, notificationScheduler)
                 .environment(\.notificationRouting, notificationRouting)
+                .environment(\.notificationSettings, notificationSettings)
         }
     }
 }

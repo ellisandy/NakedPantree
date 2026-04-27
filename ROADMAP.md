@@ -515,10 +515,18 @@ become useful instead of annoying.
 
 | # | Title | Issue | Status |
 | --- | --- | --- | --- |
-| 9.1 | Quantity inc / dec controls on `ItemDetailView` | [#51](https://github.com/ellisandy/NakedPantree/issues/51) | ⏳ Pending |
-| 9.2 | Launch / loading feedback during cold-start bootstrap | [#53](https://github.com/ellisandy/NakedPantree/issues/53) | ⏳ Pending |
-| 9.3 | Expiry-reminder time-of-day picker | [#55](https://github.com/ellisandy/NakedPantree/issues/55) | ⏳ Pending |
-| 9.4 | Roll up same-day expiries into a single summary notification | [#56](https://github.com/ellisandy/NakedPantree/issues/56) | ⏳ Pending |
+| 9.1 | Quantity inc / dec controls on `ItemDetailView` | [#51](https://github.com/ellisandy/NakedPantree/issues/51) | 🟡 In review |
+| 9.2 | Launch / loading feedback during cold-start bootstrap | [#53](https://github.com/ellisandy/NakedPantree/issues/53) | 🟡 In review |
+| 9.3 | Expiry-reminder time-of-day picker | [#55](https://github.com/ellisandy/NakedPantree/issues/55) | 🟡 In review |
+| 9.4 | Roll up same-day expiries into a single summary notification | [#56](https://github.com/ellisandy/NakedPantree/issues/56) | 🟡 In review |
+
+> Phase 9 ran the parallel-worktrees workflow: four agents in
+> isolated worktrees, no per-sub-milestone PRs, integrated locally
+> into a single PR. The shared file (`NotificationScheduler.swift`)
+> was quarantined from the agents and wired centrally in the
+> integration commit so 9.3's settings + 9.4's bundling both flow
+> through one place. Each sub-branch's commit is preserved (cherry-
+> picked, not squashed) so the PR is reviewable per sub-milestone.
 
 ---
 
