@@ -40,6 +40,8 @@ struct SearchResultsView: View {
                         .tag(item.id)
                     }
                 }
+                .scrollContentBackground(.hidden)
+                .background(Color.surface)
             }
         }
         .task(id: remoteChangeMonitor.changeToken) {

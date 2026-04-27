@@ -80,6 +80,8 @@ struct ItemFormView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.surface)
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

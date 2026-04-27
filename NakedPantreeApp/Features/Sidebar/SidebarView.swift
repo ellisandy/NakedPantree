@@ -56,6 +56,8 @@ struct SidebarView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.surface)
         .navigationTitle("Naked Pantree")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

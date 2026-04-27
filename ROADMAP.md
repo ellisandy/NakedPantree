@@ -576,7 +576,19 @@ run dev + TestFlight side-by-side.
 | 10.2 | Brand color & personality pass — **research only** (implementation deferred to 10.5) | [#52](https://github.com/ellisandy/NakedPantree/issues/52) | 🟡 In review |
 | 10.3 | Side-by-side dev + TestFlight install | [#68](https://github.com/ellisandy/NakedPantree/issues/68) | 🟡 In review |
 | 10.4 | Filter self-emission from `RemoteChangeMonitor` via persistent-history tokens | [#28](https://github.com/ellisandy/NakedPantree/issues/28) | 🟡 In review |
-| 10.5 | Brand-pass implementation (10 follow-up issues spawned from 10.2's research) | _to be filed from `docs/BRAND_PASS_PROPOSAL.md`_ | ⏳ Pending |
+| 10.5a | Brand-pass foundation #1 — Asset Catalog colorsets for the six brand primitives (light + dark + high-contrast variants) | [#80](https://github.com/ellisandy/NakedPantree/issues/80) | 🟡 In progress |
+| 10.5b | Brand-pass foundation #2 — semantic role tokens (`Color+Semantic.swift`) | [#81](https://github.com/ellisandy/NakedPantree/issues/81) | 🟡 In progress |
+| 10.5c | Brand-pass foundation #3 — apply `Color.surface` as the app canvas | [#82](https://github.com/ellisandy/NakedPantree/issues/82) | 🟡 In progress |
+| 10.5d–10.5j | Brand-pass application long tail — badges, primary CTA buttons, branded empty states, sidebar tint, header strip, banner polish, dark-mode + Increase-Contrast QA. **Currently scoped as v1.1 work**, not pre-App-Store-submission, per `docs/BRAND_PASS_PROPOSAL.md` follow-ups #4–#10. Filed as work begins. | _per proposal_ | ⏳ Deferred to v1.1 |
+
+> Phase 10.5's foundation (10.5a / 10.5b / 10.5c) lands as one
+> integrated PR using the parallel-worktrees workflow's single-PR
+> variant — three commits on a shared branch in dependency order
+> (colorsets → semantic tokens → canvas application). The remaining
+> seven follow-ups in the brand-pass proposal stay deferred to v1.1
+> per Path B from the chat decision: enough brand foundation to ship
+> a non-default-styled v1.0 to the App Store; full restyle is a v1.1
+> follow-on.
 
 > Phase 10 ran the parallel-worktrees workflow with **zero shared
 > files** between the four sub-milestones — no integration commit
@@ -628,8 +640,8 @@ upload without drafts.
 
 | # | Title | Owner | Status |
 | --- | --- | --- | --- |
-| 11.1a | App Store listing copy — name, subtitle, description, keywords, age rating, category (`docs/app-store-listing.md`) | agent | 🟡 In review |
-| 11.1b | App Privacy questionnaire answers + `PrivacyInfo.xcprivacy` plist plan (`docs/app-store-privacy.md`) | agent | 🟡 In review |
+| 11.1a | App Store listing copy — name, subtitle, description, keywords, age rating, category (`docs/app-store-listing.md`) | agent | ✅ Merged ([apps#78](https://github.com/ellisandy/NakedPantree/pull/78)) |
+| 11.1b | App Privacy questionnaire answers + `PrivacyInfo.xcprivacy` plist plan (`docs/app-store-privacy.md`) | agent | ✅ Merged ([apps#78](https://github.com/ellisandy/NakedPantree/pull/78)) |
 | 11.1c | App Store screenshots per device family (run / extend the existing `SnapshotsUITests` pipeline to produce App-Store-spec sizes) | agent | ⏳ Deferred — produced near submission time when the human is doing the App Store Connect upload anyway |
 | 11.2 | App Store Connect record setup — paste 11.1a metadata, fill 11.1b privacy answers, upload 11.1c screenshots, set age rating / category / regions, choose pricing (free, all countries) | user | ⏳ Pending |
 | 11.3 | Final manual QA pass against `ARCHITECTURE.md §11` — two iCloud accounts, two devices, real iPhone + iPad + Mac (Designed for iPad). Sweeps up the still-pending real-device verification owed by Phases 8.2 / 8.3 / 9.{1..4} / 10.{1..4} | user | ⏳ Pending |

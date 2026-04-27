@@ -44,6 +44,8 @@ struct RecentlyAddedView: View {
                         .tag(item.id)
                     }
                 }
+                .scrollContentBackground(.hidden)
+                .background(Color.surface)
             }
         }
         .navigationTitle("Recently Added")
