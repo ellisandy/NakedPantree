@@ -37,10 +37,12 @@ struct AllItemsView: View {
 
     @ViewBuilder
     private var emptyState: some View {
+        // Voice-rule copy per `DESIGN_GUIDELINES.md` §9 — the canonical
+        // empty-pantry line.
         ContentUnavailableView(
-            "Pantry's empty",
+            "Your pantry is empty.",
             systemImage: "tray",
-            description: Text("Add a location and a few items to start.")
+            description: Text("This feels like a bigger problem.")
         )
     }
 

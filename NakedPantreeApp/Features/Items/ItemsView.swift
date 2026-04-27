@@ -122,9 +122,9 @@ struct ItemsView: View {
     private func locationContent(id: Location.ID) -> some View {
         if items.isEmpty {
             ContentUnavailableView(
-                "No items here yet",
+                "Empty in here.",
                 systemImage: "tray",
-                description: Text("Tap + to add the first one.")
+                description: Text("Tap + to add the first item.")
             )
             .task(
                 id: ReloadKey(scope: id, token: remoteChangeMonitor.changeToken)
