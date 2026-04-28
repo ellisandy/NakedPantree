@@ -1,6 +1,7 @@
 import CloudKit
 import CoreData
 import NakedPantreeDomain
+import os
 
 /// Vends a `CKShare` rooted at a `Household` row, plus the `CKContainer`
 /// that owns it — exactly what `UICloudSharingController(preparationHandler:)`
@@ -16,6 +17,17 @@ import NakedPantreeDomain
 public final class CloudHouseholdSharingService: @unchecked Sendable {
     private let container: NSPersistentCloudKitContainer
     private let cloudKitContainer: CKContainer
+
+    /// Step-by-step trace of `prepareShare` — visible via Console.app
+    /// filtered by subsystem `cc.mnmlst.nakedpantree`, category
+    /// `sharing`. Added while diagnosing #90 (blank Share Household
+    /// sheet on TestFlight). Keep until that issue is fully closed
+    /// and the failure mode is documented in DEVELOPMENT.md §7; then
+    /// trim back to whatever turned out to be load-bearing.
+    private static let logger = Logger(
+        subsystem: "cc.mnmlst.nakedpantree",
+        category: "sharing"
+    )
 
     public init(
         container: NSPersistentCloudKitContainer,
@@ -37,19 +49,25 @@ public final class CloudHouseholdSharingService: @unchecked Sendable {
     public func prepareShare(
         for householdID: Household.ID
     ) async throws -> (CKShare, CKContainer) {
+        Self.logger.info("prepareShare start: \(householdID, privacy: .public)")
         let object = try await householdManagedObject(for: householdID)
+        Self.logger.info("got household managed object")
         let share: CKShare
         if let existing = try existingShare(for: object) {
+            Self.logger.info("returning existing share")
             share = existing
         } else {
+            Self.logger.info("calling NSPersistentCloudKitContainer.share")
             // `share(_:to:)` returns `(Set<NSManagedObject>, CKShare, CKContainer)`.
             // We only want the share — the modified objects are already
             // persisted by the API, and the container is the same one
             // the caller injected.
             let result = try await container.share([object], to: nil)
+            Self.logger.info("container.share returned a new CKShare")
             share = result.1
         }
         share[CKShare.SystemFieldKey.title] = "Naked Pantree"
+        Self.logger.info("prepareShare complete")
         return (share, cloudKitContainer)
     }
 
