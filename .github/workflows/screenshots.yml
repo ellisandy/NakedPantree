@@ -37,7 +37,16 @@ jobs:
       - name: Generate project
         run: xcodegen generate
 
+      # The deliverable is the screenshot attachment in the xcresult
+      # bundle. Tests use `defer { attach(...) }` so the screenshot is
+      # always captured, even when the per-test assertions time out
+      # (iPad's a11y-query ceiling — see SnapshotsUITests.swift).
+      # `continue-on-error: true` lets the workflow proceed to extract
+      # / upload even on a red test run; the assertion failures still
+      # surface as a regression signal in the run summary.
       - name: Capture snapshots
+        id: capture
+        continue-on-error: true
         run: |
           set -o pipefail
           xcodebuild test \
@@ -50,17 +59,24 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
       - name: Extract PNGs
+        if: always()
         run: scripts/extract-screenshots.sh Snapshots.xcresult "${{ matrix.label }}" en-US
 
       - name: Upload screenshots
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: screenshots-${{ matrix.label }}
           path: screenshots/
           if-no-files-found: error
 
+      # `continue-on-error: true` on Capture means the job's overall
+      # status stays green even when assertions red — `if: failure()`
+      # would never fire. Gate on the step's recorded outcome instead
+      # so a real test red still uploads the xcresult for debugging,
+      # while a clean green run skips the 100MB+ bundle.
       - name: Upload xcresult bundle
-        if: failure()
+        if: steps.capture.outcome == 'failure'
         uses: actions/upload-artifact@v7
         with:
           name: Snapshots-${{ matrix.label }}.xcresult
