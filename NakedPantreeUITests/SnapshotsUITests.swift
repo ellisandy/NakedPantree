@@ -32,10 +32,8 @@ final class SnapshotsUITests: XCTestCase {
 
     func testSidebar() throws {
         let app = launch(env: ["SNAPSHOT_MODE": "1"])
-        // `defer` so the screenshot is captured even when the
-        // assertions below time out — see the "screenshot is the
-        // deliverable" note in `MARK: - Helpers`.
-        defer { attach(name: "01-sidebar") }
+        settle()
+        attach(name: "01-sidebar")
         // testSidebar leaves `sidebarSelection` nil. On iPhone the
         // sidebar is the front column; on iPad it's the left column.
         // Either way the sidebar's nav-bar identifier is "Naked Pantree"
@@ -53,7 +51,8 @@ final class SnapshotsUITests: XCTestCase {
             "SNAPSHOT_MODE": "1",
             "SNAPSHOT_SIDEBAR": "smartList:allItems",
         ])
-        defer { attach(name: "02-all-items") }
+        settle()
+        attach(name: "02-all-items")
         waitForColumn(app, navbar: "All Items")
         XCTAssertTrue(
             app.staticTexts["Olive oil"].firstMatch.waitForExistence(timeout: dataTimeout),
@@ -66,7 +65,8 @@ final class SnapshotsUITests: XCTestCase {
             "SNAPSHOT_MODE": "1",
             "SNAPSHOT_SIDEBAR": "location:Fridge",
         ])
-        defer { attach(name: "03-location-fridge") }
+        settle()
+        attach(name: "03-location-fridge")
         waitForColumn(app, navbar: "Fridge")
         XCTAssertTrue(
             app.staticTexts["Whole milk"].firstMatch.waitForExistence(timeout: dataTimeout),
@@ -80,7 +80,8 @@ final class SnapshotsUITests: XCTestCase {
             "SNAPSHOT_SIDEBAR": "location:Fridge",
             "SNAPSHOT_ITEM": "Whole milk",
         ])
-        defer { attach(name: "04-item-detail") }
+        settle()
+        attach(name: "04-item-detail")
         // Detail column's nav-bar is the item name once routing has
         // landed. Waiting on it (rather than the content column's
         // "Fridge" navbar) ensures both the content selection AND the
@@ -95,29 +96,52 @@ final class SnapshotsUITests: XCTestCase {
 
     // MARK: - Helpers
     //
-    // Screenshot-vs-assertion split: the deliverable is the screenshot
-    // attachment, which fires from `defer` blocks at the top of each
-    // test method and is committed to the xcresult before the
-    // assertions below run. The assertions are a regression signal
-    // only — when they fail (typically the iPad sim's a11y query
-    // ceiling, see the `bootstrapTimeout` note) the screenshot still
-    // ships. The workflow's `Capture snapshots` step is marked
-    // `continue-on-error: true` and the extract / upload steps run
-    // `if: always()` for the same reason.
+    // Order-of-operations: launch, settle, **attach (deliverable),**
+    // assert (regression signal). The deliverable comes before any
+    // XCUITest query because XCUITest's "Failed to get matching
+    // snapshots" error on iPad raises through Swift's `defer`
+    // (NSException → not catchable from Swift), which is why the
+    // earlier defer-based pattern lost two of four iPad PNGs in
+    // run #25027159236. Capturing the screenshot before any query
+    // makes the deliverable independent of XCUITest query
+    // reliability.
+    //
+    // The workflow's `Capture snapshots` step still runs
+    // `continue-on-error: true` so a failed assertion doesn't block
+    // the artifact upload, but with this order the upload would land
+    // even without that gate — they're complementary belts.
 
-    /// Tolerance for the structural wait — the iPad simulator on the
-    /// `macos-26` GitHub Actions runner spends ~33s in
-    /// "Setting up automation session" before the app's first frame
-    /// renders. 60s gives headroom over that floor on iPhone-class
-    /// destinations (which resolve in <2s typically). On iPad this
-    /// often hits the framework's ~30s a11y-query ceiling instead —
-    /// the failure is recorded as a regression signal but doesn't
-    /// block the screenshot deliverable.
+    /// Tolerance for the structural wait. iPad CI has occasionally
+    /// hit the framework's ~30s a11y-query ceiling (a separate,
+    /// XCUITest-internal timeout we can't extend) — when that
+    /// happens the assertion red-marks but the screenshot has
+    /// already been captured.
     private var bootstrapTimeout: TimeInterval { 60 }
 
     /// Tolerance for the data wait once the structural element is up.
     /// 10s is well past comfortable for an in-memory fetch.
     private var dataTimeout: TimeInterval { 10 }
+
+    /// How long to wait between `app.launch()` returning and
+    /// capturing the screenshot. Empirically, the iPad sim on
+    /// `macos-26` runners needs ~30–35s after launch before the
+    /// content / detail columns finish their first render — the
+    /// `Wait for ... to idle` reading from XCUITest's automation
+    /// session is too optimistic in practice (it fires while
+    /// SwiftUI's first body pass is still running). 45s provides
+    /// margin over that floor. iPhone runs eat the same delay
+    /// — acceptable since this workflow is manually triggered and
+    /// the deliverable is the screenshot, not throughput.
+    private var settleDuration: TimeInterval { 45 }
+
+    /// Pure `Thread.sleep` settle — deliberately not a
+    /// `waitForExistence` poll, since query-based waits are the
+    /// thing that raises through defer on iPad. Sleeping is the
+    /// cheapest reliable way to give the simulator time to render
+    /// before the screenshot capture.
+    private func settle() {
+        Thread.sleep(forTimeInterval: settleDuration)
+    }
 
     private func launch(env: [String: String]) -> XCUIApplication {
         let app = XCUIApplication()
