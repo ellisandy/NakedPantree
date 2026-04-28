@@ -32,8 +32,14 @@ final class SnapshotsUITests: XCTestCase {
 
     func testSidebar() throws {
         let app = launch(env: ["SNAPSHOT_MODE": "1"])
+        // testSidebar leaves `sidebarSelection` nil. On iPhone the
+        // sidebar is the front column; on iPad it's the left column.
+        // Either way the sidebar's nav-bar identifier is "Naked Pantree"
+        // — see RootView's `navigationTitle("Naked Pantree")` on the
+        // sidebar selection-nil path.
+        waitForColumn(app, navbar: "Naked Pantree")
         XCTAssertTrue(
-            app.staticTexts["All Items"].firstMatch.waitForExistence(timeout: 5),
+            app.staticTexts["All Items"].firstMatch.waitForExistence(timeout: dataTimeout),
             "Sidebar didn't render — snapshot fixtures may not be seeded."
         )
         attach(name: "01-sidebar")
@@ -44,8 +50,9 @@ final class SnapshotsUITests: XCTestCase {
             "SNAPSHOT_MODE": "1",
             "SNAPSHOT_SIDEBAR": "smartList:allItems",
         ])
+        waitForColumn(app, navbar: "All Items")
         XCTAssertTrue(
-            app.staticTexts["Olive oil"].firstMatch.waitForExistence(timeout: 5),
+            app.staticTexts["Olive oil"].firstMatch.waitForExistence(timeout: dataTimeout),
             "All Items list didn't show fixture content."
         )
         attach(name: "02-all-items")
@@ -56,8 +63,9 @@ final class SnapshotsUITests: XCTestCase {
             "SNAPSHOT_MODE": "1",
             "SNAPSHOT_SIDEBAR": "location:Fridge",
         ])
+        waitForColumn(app, navbar: "Fridge")
         XCTAssertTrue(
-            app.staticTexts["Whole milk"].firstMatch.waitForExistence(timeout: 5),
+            app.staticTexts["Whole milk"].firstMatch.waitForExistence(timeout: dataTimeout),
             "Fridge contents didn't render."
         )
         attach(name: "03-location-fridge")
@@ -69,14 +77,39 @@ final class SnapshotsUITests: XCTestCase {
             "SNAPSHOT_SIDEBAR": "location:Fridge",
             "SNAPSHOT_ITEM": "Whole milk",
         ])
+        // Detail column's nav-bar is the item name once routing has
+        // landed. Waiting on it (rather than the content column's
+        // "Fridge" navbar) ensures both the content selection AND the
+        // detail selection have been applied before we look for
+        // "Quantity".
+        waitForColumn(app, navbar: "Whole milk")
         XCTAssertTrue(
-            app.staticTexts["Quantity"].firstMatch.waitForExistence(timeout: 5),
+            app.staticTexts["Quantity"].firstMatch.waitForExistence(timeout: dataTimeout),
             "Item detail didn't render."
         )
         attach(name: "04-item-detail")
     }
 
     // MARK: - Helpers
+
+    /// Tolerance for the structural wait — the iPad simulator on the
+    /// `macos-26` GitHub Actions runner spends ~33s in
+    /// "Setting up automation session" before the app's first frame
+    /// renders, before any of our code has a chance to run. 60s gives
+    /// generous headroom over that floor without slowing the happy
+    /// path (`waitForExistence` returns the moment the element shows
+    /// up). iPhone-class destinations resolve in <2s; this only
+    /// matters on the slow runners.
+    private var bootstrapTimeout: TimeInterval { 60 }
+
+    /// Tolerance for the data wait once the structural element is up.
+    /// At that point bootstrap is done and `AllItemsView.load()` is a
+    /// near-instant in-memory fetch, so 10s is well past comfortable.
+    /// Keeping it a separate (much shorter) budget means a real
+    /// regression — items never load — surfaces as a 70s failure
+    /// rather than a 4 × 60s = 4-minute timeout cascade across the
+    /// whole suite.
+    private var dataTimeout: TimeInterval { 10 }
 
     private func launch(env: [String: String]) -> XCUIApplication {
         let app = XCUIApplication()
@@ -85,6 +118,35 @@ final class SnapshotsUITests: XCTestCase {
         }
         app.launch()
         return app
+    }
+
+    /// Phase-1 wait: blocks until the requested column's
+    /// `NavigationBar` exists in the accessibility tree. Acts as a
+    /// proxy for "bootstrap is past `LaunchView` and the
+    /// `NavigationSplitView` column has rendered". Failures here
+    /// indicate a structural problem (env vars not picked up,
+    /// bootstrap stuck, column not routing) — distinct from the
+    /// downstream data-row check, which surfaces a fixture / load
+    /// regression.
+    private func waitForColumn(
+        _ app: XCUIApplication,
+        navbar identifier: String,
+        file: StaticString = #file,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            app.navigationBars[identifier].firstMatch.waitForExistence(
+                timeout: bootstrapTimeout
+            ),
+            """
+            Navigation bar '\(identifier)' didn't appear within \
+            \(Int(bootstrapTimeout))s — app didn't reach the expected \
+            column. Bootstrap may be stuck, or the snapshot env vars \
+            may not be routing.
+            """,
+            file: file,
+            line: line
+        )
     }
 
     /// Attaches a screenshot of the current screen with `keepAlways`
