@@ -22,8 +22,13 @@ public protocol NotificationCenterServicing: Sendable {
     /// Equivalent to `UNUserNotificationCenter.notificationSettings().authorizationStatus`.
     func authorizationStatus() async -> UNAuthorizationStatus
 
-    /// Equivalent to `UNUserNotificationCenter.add(_:)`.
-    func add(_ request: UNNotificationRequest) async throws
+    /// Equivalent to `UNUserNotificationCenter.add(_:)`. Marked
+    /// `sending` so an `actor` conformer (e.g. the test stub) can
+    /// receive a non-`Sendable` `UNNotificationRequest` from a
+    /// non-isolated caller — Swift 6's ownership-transfer marker
+    /// gives the compiler enough information to know the caller
+    /// won't touch the request after handing it off.
+    func add(_ request: sending UNNotificationRequest) async throws
 
     /// Equivalent to `UNUserNotificationCenter.removePendingNotificationRequests(withIdentifiers:)`.
     /// `async` even though the live call is synchronous — keeps the
