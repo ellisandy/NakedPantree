@@ -72,7 +72,11 @@ final class AccountStatusMonitor {
         }
     }
 
-    private static func map(_ raw: CKAccountStatus) -> AccountStatus {
+    /// `internal` (not `private`) so `AccountStatusMonitorMappingTests`
+    /// can pin every `CKAccountStatus → AccountStatus` case directly
+    /// (issue #112). Pure function with no dependencies; opening it
+    /// up costs nothing at the type's usage surface.
+    static func map(_ raw: CKAccountStatus) -> AccountStatus {
         switch raw {
         case .available: .available
         case .noAccount: .noAccount
