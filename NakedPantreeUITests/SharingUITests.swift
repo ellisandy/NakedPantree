@@ -43,8 +43,23 @@ final class SharingUITests: XCTestCase {
             "First-launch bootstrap didn't populate the sidebar — share path can't run."
         )
 
-        // Open Settings via the sidebar's toolbar gear.
+        // Open Settings via the sidebar's toolbar gear. Settings lives
+        // in a `placement: .secondaryAction` ToolbarItem
+        // (`SidebarView.swift`), which on iPhone collapses into a
+        // "More" / ellipsis menu. We expand the menu first if present;
+        // on devices/orientations where the gear is shown directly,
+        // we tap it without the menu hop.
         let settingsButton = app.buttons["settings.toolbar.entry"]
+        if !settingsButton.waitForExistence(timeout: 2) {
+            let moreButton = app.navigationBars.buttons["More"]
+                .firstMatch
+            XCTAssertTrue(
+                moreButton.waitForExistence(timeout: 5),
+                "Sidebar's More menu button isn't reachable — "
+                    + "Settings entry has no path."
+            )
+            moreButton.tap()
+        }
         XCTAssertTrue(
             settingsButton.waitForExistence(timeout: 5),
             "Settings entry button is missing from the sidebar toolbar."
