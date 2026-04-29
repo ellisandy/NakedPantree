@@ -193,7 +193,7 @@ actor StubNotificationCenter: NotificationCenterServicing {
         status
     }
 
-    func add(_ request: UNNotificationRequest) async throws {
+    func add(_ request: sending UNNotificationRequest) async throws {
         if let addError {
             throw addError
         }

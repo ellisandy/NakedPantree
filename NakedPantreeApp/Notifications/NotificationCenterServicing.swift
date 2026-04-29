@@ -62,7 +62,7 @@ public struct LiveNotificationCenter: NotificationCenterServicing {
         await center.notificationSettings().authorizationStatus
     }
 
-    public func add(_ request: UNNotificationRequest) async throws {
+    public func add(_ request: sending UNNotificationRequest) async throws {
         try await center.add(request)
     }
 
