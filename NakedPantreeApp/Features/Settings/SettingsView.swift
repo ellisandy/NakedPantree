@@ -80,8 +80,11 @@ struct SettingsView: View {
                     // needing to attach a debugger.
                     Color.clear
                         .onAppear {
+                            let householdState = household != nil ? "set" : "nil"
+                            let sharingState = householdSharing != nil ? "set" : "nil"
                             Self.logger.error(
-                                "share sheet presented but if-let failed — household=\(household != nil ? "set" : "nil", privacy: .public) sharing=\(householdSharing != nil ? "set" : "nil", privacy: .public)"
+                                // swiftlint:disable:next line_length
+                                "share sheet presented but if-let failed — household=\(householdState, privacy: .public) sharing=\(sharingState, privacy: .public)"
                             )
                         }
                 }
@@ -112,8 +115,11 @@ struct SettingsView: View {
                     // possible signal that the user actually tapped.
                     // `notice` level so the message is visible in
                     // Console.app without enabling Info messages.
+                    let householdState = household != nil ? "set" : "nil"
+                    let sharingState = householdSharing != nil ? "set" : "nil"
                     Self.logger.notice(
-                        "share button tapped — household=\(household != nil ? "set" : "nil", privacy: .public) sharing=\(householdSharing != nil ? "set" : "nil", privacy: .public)"
+                        // swiftlint:disable:next line_length
+                        "share button tapped — household=\(householdState, privacy: .public) sharing=\(sharingState, privacy: .public)"
                     )
                     isPresentingShareSheet = true
                 } label: {
