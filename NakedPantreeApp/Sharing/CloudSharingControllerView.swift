@@ -76,11 +76,18 @@ struct CloudSharingControllerView: UIViewControllerRepresentable {
     }
 
     /// Runs `prepareShare(for:)` on the actor-isolated service, racing
-    /// it against `prepareShareTimeout`. Whichever wins wins; the
-    /// loser is cancelled. Returns the outcome as a value so the
-    /// caller can dispatch onto MainActor in one place.
-    private func runPrepareShareWithTimeout() async -> Result<SharePayload, Error> {
-        let timeout = Self.prepareShareTimeout
+    /// it against `timeout`. Whichever wins wins; the loser is
+    /// cancelled. Returns the outcome as a value so the caller can
+    /// dispatch onto MainActor in one place.
+    ///
+    /// `internal` (not `private`) so
+    /// `CloudSharingControllerViewTimeoutRaceTests` can drive it
+    /// directly with a small timeout. Production callers omit
+    /// `timeout` and pick up the 60s default from
+    /// `prepareShareTimeout`.
+    func runPrepareShareWithTimeout(
+        timeout: Duration = Self.prepareShareTimeout
+    ) async -> Result<SharePayload, Error> {
         let householdID = householdID
         let sharing = sharing
         return await withTaskGroup(of: Result<SharePayload, Error>.self) { group in
@@ -108,13 +115,16 @@ struct CloudSharingControllerView: UIViewControllerRepresentable {
     /// Tuple-shaped payload kept as a struct so the `Result.success`
     /// destructure at the call site is a single binding (sidesteps the
     /// swift-format / swiftlint disagreement on multi-bound `let` /
-    /// `case let` forms).
-    private struct SharePayload {
+    /// `case let` forms). `internal` so the race-test suite can match
+    /// against it.
+    struct SharePayload {
         let share: CKShare
         let container: CKContainer
     }
 
-    private struct SharingTimeoutError: LocalizedError {
+    /// `internal` so the race-test suite can `is`-check the failure
+    /// type from `runPrepareShareWithTimeout`.
+    struct SharingTimeoutError: LocalizedError {
         var errorDescription: String? {
             // Surfaced to the user by `UICloudSharingController`'s own
             // alert — keep terse and actionable.
