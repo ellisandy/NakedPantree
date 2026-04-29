@@ -168,13 +168,20 @@ jobs:
       # version (`CFBundleShortVersionString`) stays at whatever Info.plist
       # holds — bump that by hand when the milestone changes.
       #
-      # Signing: `CODE_SIGN_STYLE=Manual` +
-      # `PROVISIONING_PROFILE_SPECIFIER=<UUID>` +
-      # `OTHER_CODE_SIGN_FLAGS=--keychain=...` overrides project.yml's
-      # `CODE_SIGN_STYLE: Automatic` and pins codesign to the temp
-      # keychain. No `-allowProvisioningUpdates` — the cert + profile are
-      # already on disk, so xcodebuild has no reason to phone home and
-      # mint a new cert (which is what filled the team's quota in #92).
+      # Signing: `CODE_SIGN_STYLE=Manual` + `CODE_SIGN_IDENTITY` +
+      # `DEVELOPMENT_TEAM` + `OTHER_CODE_SIGN_FLAGS=--keychain=...`
+      # overrides project.yml's `CODE_SIGN_STYLE: Automatic` and pins
+      # codesign to the temp keychain. **No `PROVISIONING_PROFILE_SPECIFIER`
+      # on the cmdline** — that flag cascades to every target in the
+      # build graph, and SwiftPM-generated resource bundles
+      # (e.g. `Core_NakedPantreePersistence`) reject it with
+      # "does not support provisioning profiles". Instead, the profile
+      # was installed to `~/Library/MobileDevice/Provisioning Profiles/`
+      # in the keychain step; Xcode auto-matches it to the main app
+      # target by `(bundle id, team id, cert)` and leaves resource
+      # bundles alone. No `-allowProvisioningUpdates` — the cert +
+      # profile are on disk, so xcodebuild has no reason to phone home
+      # and mint a new cert (which is what filled the team's quota in #92).
       - name: Archive
         run: |
           set -o pipefail
@@ -188,7 +195,6 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM=YJBSSS9C6C \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
             OTHER_CODE_SIGN_FLAGS="--keychain=$KEYCHAIN_PATH" \
             CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
 
