@@ -38,6 +38,81 @@ jobs:
       - name: Generate project
         run: xcodegen generate
 
+      # Manual signing (issue #92). Each ephemeral runner gets a fresh
+      # temporary keychain that holds *only* the imported distribution
+      # cert for the duration of the job. The keychain is deleted in the
+      # cleanup step at the end. We do NOT pass `-allowProvisioningUpdates`
+      # to xcodebuild — that flag asks Apple to mint a fresh cert per
+      # run, which is what filled the team's cert quota in the first
+      # place. With the cert + profile in hand, xcodebuild has no reason
+      # to phone home.
+      #
+      # Keychain naming: a per-run UUID-suffixed name (e.g.
+      # `nakedpantree-build-<run-id>.keychain-db`) prevents collisions
+      # if a future workflow change ever shares state across jobs.
+      - name: Set up signing keychain
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/nakedpantree-build-$GITHUB_RUN_ID.keychain-db"
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          CERT_PATH="$RUNNER_TEMP/build_certificate.p12"
+          PROFILE_PATH="$RUNNER_TEMP/AppStore.mobileprovision"
+
+          # Decode the cert + profile from base64 secrets.
+          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 -d > "$CERT_PATH"
+          printf '%s' "$PROVISIONING_PROFILE_BASE64" | base64 -d > "$PROFILE_PATH"
+
+          # Sanity-check sizes — base64 padding mistakes silently produce
+          # short files that fail downstream with cryptic codesign errors.
+          CERT_SIZE=$(wc -c < "$CERT_PATH" | tr -d ' ')
+          PROFILE_SIZE=$(wc -c < "$PROFILE_PATH" | tr -d ' ')
+          echo "▸ p12: $CERT_SIZE bytes, profile: $PROFILE_SIZE bytes"
+          [ "$CERT_SIZE" -gt 1000 ] || { echo "::error::p12 too small — re-check BUILD_CERTIFICATE_BASE64"; exit 1; }
+          [ "$PROFILE_SIZE" -gt 1000 ] || { echo "::error::profile too small — re-check PROVISIONING_PROFILE_BASE64"; exit 1; }
+
+          # Create + unlock + add to search list. `set-keychain-settings`
+          # without `-l/-u` disables auto-lock so a long archive doesn't
+          # re-lock and break codesign mid-run.
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import the cert + private key. `-T /usr/bin/codesign` lets
+          # codesign read the key without prompting; `-A` would be
+          # broader but is unnecessary here.
+          security import "$CERT_PATH" \
+            -P "$P12_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+
+          # Make the new keychain the default and add to search list so
+          # xcodebuild finds the identity. Order matters: the user's
+          # default search list must include this keychain.
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Install the provisioning profile to the well-known location
+          # xcodebuild scans. Filename can be anything; Xcode keys off
+          # the embedded UUID.
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          PROFILE_UUID=$(security cms -D -i "$PROFILE_PATH" | plutil -extract UUID raw -)
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          echo "▸ Installed profile UUID: $PROFILE_UUID"
+
+          # Echo identity for the build log so signing failures are
+          # debuggable without re-running the job.
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+          # Stash the keychain path + profile UUID for downstream steps.
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
+
       # The .p8 stays on the runner only for this job. The well-known
       # path lets `xcodebuild -authenticationKeyPath` and
       # `xcrun altool --apiKey` find it without surfacing the secret
@@ -86,17 +161,21 @@ jobs:
             echo "::warning::Decoded key tail is '$LAST_LINE' (expected '-----END PRIVATE KEY-----'). xcodebuild may still accept it; surfacing for visibility."
           fi
 
-      # `CURRENT_PROJECT_VERSION` overrides `CFBundleVersion` (build
-      # number) at archive time. TestFlight requires a strictly
-      # increasing build number per marketing version; deriving from
-      # `GITHUB_RUN_NUMBER` keeps it monotonic without committing
-      # back to the repo. Marketing version (`CFBundleShortVersionString`)
-      # stays at whatever Info.plist holds — bump that by hand when
-      # the milestone changes.
+      # Build number: `CURRENT_PROJECT_VERSION` overrides `CFBundleVersion`
+      # at archive time. TestFlight requires a strictly increasing build
+      # number per marketing version; deriving from `GITHUB_RUN_NUMBER`
+      # keeps it monotonic without committing back to the repo. Marketing
+      # version (`CFBundleShortVersionString`) stays at whatever Info.plist
+      # holds — bump that by hand when the milestone changes.
+      #
+      # Signing: `CODE_SIGN_STYLE=Manual` +
+      # `PROVISIONING_PROFILE_SPECIFIER=<UUID>` +
+      # `OTHER_CODE_SIGN_FLAGS=--keychain=...` overrides project.yml's
+      # `CODE_SIGN_STYLE: Automatic` and pins codesign to the temp
+      # keychain. No `-allowProvisioningUpdates` — the cert + profile are
+      # already on disk, so xcodebuild has no reason to phone home and
+      # mint a new cert (which is what filled the team's quota in #92).
       - name: Archive
-        env:
-          API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
         run: |
           set -o pipefail
           xcodebuild archive \
@@ -106,23 +185,30 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath build/NakedPantree.xcarchive \
             -skipPackagePluginValidation \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_$API_KEY_ID.p8 \
-            -authenticationKeyID "$API_KEY_ID" \
-            -authenticationKeyIssuerID "$API_ISSUER_ID" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=YJBSSS9C6C \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+            OTHER_CODE_SIGN_FLAGS="--keychain=$KEYCHAIN_PATH" \
             CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
 
-      # `app-store-connect` is the modern method name; older Xcode
-      # called it `app-store`. `signingStyle = automatic` lets Xcode
-      # fetch / regenerate provisioning profiles via the API key —
-      # avoids storing certs and profiles as repo secrets. `teamID`
-      # is hardcoded here to match `DEVELOPMENT_TEAM` in project.yml;
-      # team ids are public (visible on App Store listings), not
-      # secret. Update both together if Apple ever reissues the team.
+      # Manual export: `signingStyle = manual` plus a
+      # `provisioningProfiles` dict mapping bundle id → profile name.
+      # Xcode resolves the profile by *name*, not UUID, so we extract
+      # the embedded `Name` field from the .mobileprovision at runtime.
+      # `signingCertificate` pins the cert by its common name so a
+      # future second cert in the same keychain doesn't introduce
+      # ambiguity. team ids are public, hardcoding is fine — update in
+      # lockstep with `project.yml`'s `DEVELOPMENT_TEAM` if Apple
+      # reissues.
       - name: Write export options
         run: |
+          set -euo pipefail
+          PROFILE_PATH="$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          PROFILE_NAME=$(security cms -D -i "$PROFILE_PATH" | plutil -extract Name raw -)
+          echo "▸ Profile name for export: $PROFILE_NAME"
+
           mkdir -p build
-          cat > build/exportOptions.plist <<'PLIST'
+          cat > build/exportOptions.plist <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -130,9 +216,16 @@ jobs:
             <key>method</key>
             <string>app-store-connect</string>
             <key>signingStyle</key>
-            <string>automatic</string>
+            <string>manual</string>
             <key>teamID</key>
             <string>YJBSSS9C6C</string>
+            <key>signingCertificate</key>
+            <string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>cc.mnmlst.nakedpantree</key>
+              <string>${PROFILE_NAME}</string>
+            </dict>
             <key>uploadSymbols</key>
             <true/>
           </dict>
@@ -140,19 +233,13 @@ jobs:
           PLIST
 
       - name: Export IPA
-        env:
-          API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
-          API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
         run: |
           set -o pipefail
           xcodebuild -exportArchive \
             -archivePath build/NakedPantree.xcarchive \
             -exportPath build/export \
             -exportOptionsPlist build/exportOptions.plist \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_$API_KEY_ID.p8 \
-            -authenticationKeyID "$API_KEY_ID" \
-            -authenticationKeyIssuerID "$API_ISSUER_ID"
+            OTHER_CODE_SIGN_FLAGS="--keychain=$KEYCHAIN_PATH"
 
       - name: Upload to TestFlight
         env:
@@ -175,3 +262,18 @@ jobs:
           name: NakedPantree.xcarchive
           path: build/NakedPantree.xcarchive
           if-no-files-found: ignore
+
+      # Always tear down the temp keychain. Runners are ephemeral so
+      # this is belt-and-braces — but if a future change ever caches
+      # `$RUNNER_TEMP` or shares state across jobs, leaving the
+      # keychain behind would be a credential leak. `|| true` because
+      # a failure here shouldn't mask a real build failure.
+      - name: Clean up signing keychain
+        if: always()
+        run: |
+          if [ -n "${KEYCHAIN_PATH:-}" ] && [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+          if [ -n "${PROFILE_UUID:-}" ]; then
+            rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision" || true
+          fi
