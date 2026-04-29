@@ -13,7 +13,7 @@ struct NakedPantreeApp: App {
     private let repositories: Repositories
     private let remoteChangeMonitor: RemoteChangeMonitor
     private let accountStatusMonitor: AccountStatusMonitor
-    private let householdSharing: CloudHouseholdSharingService?
+    private let householdSharing: (any HouseholdSharingService)?
     private let notificationScheduler: NotificationScheduler
     private let notificationRouting: NotificationRoutingService
     private let notificationSettings: NotificationSettings
@@ -44,7 +44,17 @@ struct NakedPantreeApp: App {
             repositories = .makePreview()
             remoteChangeMonitor = RemoteChangeMonitor()
             accountStatusMonitor = AccountStatusMonitor()
-            householdSharing = nil
+            // `STUB_SHARING=1` swaps in `StubHouseholdSharingService`
+            // so `SharingUITests` can drive the Settings → Share
+            // Household path on CI without an iCloud account. Without
+            // the stub, `householdSharing` stays nil and the Share
+            // Household button hides — same behavior as
+            // `BootstrapUITests` and snapshot mode.
+            if ProcessInfo.processInfo.environment["STUB_SHARING"] == "1" {
+                householdSharing = StubHouseholdSharingService()
+            } else {
+                householdSharing = nil
+            }
             notificationScheduler = NotificationScheduler()
             notificationSettings = NotificationSettings()
         } else if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
