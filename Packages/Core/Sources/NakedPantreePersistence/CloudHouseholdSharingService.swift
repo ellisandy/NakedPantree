@@ -68,42 +68,64 @@ public final class CloudHouseholdSharingService: HouseholdSharingService, @unche
         for householdID: Household.ID
     ) async throws -> (CKShare, CKContainer) {
         Self.logger.notice("prepareShare start: \(householdID, privacy: .public)")
-        let object = try await householdManagedObject(for: householdID)
-        Self.logger.notice("got household managed object")
-        let share: CKShare
+        // Lookup returns an objectID, not the NSManagedObject itself
+        // (issue #107). The previous shape returned an NSManagedObject
+        // out of `performBackgroundTask`, leaving its source MOC pinned
+        // to a background queue that the caller no longer ran on; any
+        // subsequent property access (including the `objectID` read in
+        // `existingShare`) was undefined behavior. NSManagedObjectID is
+        // documented thread-safe and Sendable-equivalent in practice.
+        let objectID = try await householdObjectID(for: householdID)
+        Self.logger.notice("got household objectID")
+
         // `share(_:to:)` returns `(Set<NSManagedObject>, CKShare, CKContainer)`.
-        // The third element is the CKContainer the system actually used for
-        // the share — even though it has the same identifier as the one we
-        // pre-built, `UICloudSharingController` reportedly refuses to render
-        // when handed a different `CKContainer` instance than the one the
-        // share was minted in (#90 theory 2). Capture it here and return it
-        // to the caller; only fall back to the injected `cloudKitContainer`
-        // for the existing-share branch where no `share(_:to:)` result is
-        // available.
-        let resolvedContainer: CKContainer
-        if let existing = try existingShare(for: object) {
+        // The third element is the CKContainer the system actually used
+        // for the share — even though it has the same identifier as the
+        // one we pre-built, `UICloudSharingController` reportedly refuses
+        // to render when handed a different `CKContainer` instance than
+        // the share was minted in (#90 theory 2). Capture it here for the
+        // new-share branch; for the existing-share branch there's no
+        // `share(_:to:)` result to extract from, so fall back to the
+        // injected `cloudKitContainer`.
+        if let existing = try existingShare(matching: objectID) {
             Self.logger.notice("returning existing share")
-            share = existing
-            resolvedContainer = cloudKitContainer
-        } else {
-            Self.logger.notice("calling NSPersistentCloudKitContainer.share")
-            let result = try await container.share([object], to: nil)
-            Self.logger.notice("container.share returned a new CKShare")
-            share = result.1
-            resolvedContainer = result.2
+            existing[CKShare.SystemFieldKey.title] = "Naked Pantree"
+            Self.logger.notice("prepareShare complete")
+            return (existing, cloudKitContainer)
         }
+
+        Self.logger.notice("calling NSPersistentCloudKitContainer.share")
+        // Resolve the object on the viewContext's main queue (Apple's
+        // documented sample pattern) and call `share(_:to:)` from the
+        // same actor. `share(_:to:)` is internally queue-aware; the
+        // only correctness requirement is that the NSManagedObject's
+        // source context is alive for the duration of the call.
+        // `viewContext` lives for the lifetime of the container, so
+        // it is. The `Set<NSManagedObject>` first element of
+        // `share(_:to:)`'s return tuple is non-Sendable, so we
+        // destructure inside the @MainActor task and return the
+        // CKShare + CKContainer (both Sendable).
+        let containerRef = container
+        let result = try await Task { @MainActor in
+            let object = containerRef.viewContext.object(with: objectID)
+            let (_, share, resolvedContainer) = try await containerRef.share([object], to: nil)
+            return (share, resolvedContainer)
+        }.value
+        Self.logger.notice("container.share returned a new CKShare")
+        let (share, resolvedContainer) = result
         share[CKShare.SystemFieldKey.title] = "Naked Pantree"
         Self.logger.notice("prepareShare complete")
         return (share, resolvedContainer)
     }
 
-    /// Resolves the household domain id to its `NSManagedObject` on a
-    /// fresh background context. Lookup-only — the object is read on
-    /// the background queue and the resulting `objectID` is what
-    /// `share(_:to:)` consumes.
-    private func householdManagedObject(
+    /// Resolves the household domain id to its `NSManagedObjectID` on
+    /// a fresh background context. The `NSManagedObject` is consumed
+    /// only inside the closure (where it's pinned to the context's
+    /// queue), and the `NSManagedObjectID` returned is safe to pass
+    /// across queue boundaries.
+    private func householdObjectID(
         for householdID: Household.ID
-    ) async throws -> NSManagedObject {
+    ) async throws -> NSManagedObjectID {
         try await container.performBackgroundTask { context in
             let request = NSFetchRequest<NSManagedObject>(entityName: "HouseholdEntity")
             request.predicate = NSPredicate(format: "id == %@", householdID as CVarArg)
@@ -111,16 +133,18 @@ public final class CloudHouseholdSharingService: HouseholdSharingService, @unche
             guard let object = try context.fetch(request).first else {
                 throw HouseholdSharingError.householdNotFound
             }
-            return object
+            return object.objectID
         }
     }
 
-    /// Returns the existing `CKShare` for `object`, or `nil` if none
-    /// exists yet. `fetchShares(matching:)` is the documented Core Data
-    /// API for asking "is this row already shared?"
-    private func existingShare(for object: NSManagedObject) throws -> CKShare? {
-        let shares = try container.fetchShares(matching: [object.objectID])
-        return shares[object.objectID]
+    /// Returns the existing `CKShare` for the given object id, or
+    /// `nil` if none exists yet. `fetchShares(matching:)` is the
+    /// documented Core Data API for asking "is this row already
+    /// shared?" and accepts an `NSManagedObjectID` directly — no
+    /// NSManagedObject required.
+    private func existingShare(matching objectID: NSManagedObjectID) throws -> CKShare? {
+        let shares = try container.fetchShares(matching: [objectID])
+        return shares[objectID]
     }
 }
 
