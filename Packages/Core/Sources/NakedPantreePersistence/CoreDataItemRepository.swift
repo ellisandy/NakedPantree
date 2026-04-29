@@ -109,6 +109,21 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
         }
     }
 
+    public func updateQuantity(id: Item.ID, quantity: Int32) async throws {
+        // Issue #118: partial update — touch only `quantity` and
+        // `updatedAt` on the row. Avoids round-tripping through an
+        // `Item` value the caller mutates, which races edit-form
+        // saves of `name` / `expiresAt` (the form's just-saved value
+        // could be overwritten by a stepper persist that fetched
+        // before the form's save landed).
+        try await container.performBackgroundTaskWithDefaults { context in
+            guard let row = try Self.fetchItemRow(id: id, in: context) else { return }
+            row.setValue(quantity, forKey: "quantity")
+            row.setValue(Date(), forKey: "updatedAt")
+            try context.save()
+        }
+    }
+
     public func delete(id: Item.ID) async throws {
         try await container.performBackgroundTaskWithDefaults { context in
             guard let row = try Self.fetchItemRow(id: id, in: context) else { return }

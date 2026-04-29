@@ -333,6 +333,81 @@ struct ItemRepositoryContractTests {
     }
 
     @Test(
+        "updateQuantity changes only quantity, leaves name and expiresAt untouched (#118)",
+        arguments: RepositoryFactory.all)
+    func updateQuantityIsPartial(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let itemRepo = bundle.item
+        let house = try await household.currentHousehold()
+        let kitchen = Location(householdID: house.id, name: "Kitchen")
+        try await locationRepo.create(kitchen)
+
+        let expiry = Date(timeIntervalSince1970: 1_000_000)
+        let item = Item(
+            locationID: kitchen.id,
+            name: "Yogurt",
+            quantity: 1,
+            unit: .count,
+            expiresAt: expiry,
+            notes: "Plain greek"
+        )
+        try await itemRepo.create(item)
+
+        // Issue #118: updateQuantity must NOT touch name / expiresAt /
+        // notes / unit / locationID. The original race was a stepper
+        // persist overwriting these fields after a form save.
+        try await itemRepo.updateQuantity(id: item.id, quantity: 7)
+
+        let after = try #require(try await itemRepo.item(id: item.id))
+        #expect(after.quantity == 7)
+        #expect(after.name == "Yogurt")
+        #expect(after.expiresAt == expiry)
+        #expect(after.notes == "Plain greek")
+        #expect(after.unit == .count)
+        #expect(after.locationID == kitchen.id)
+    }
+
+    @Test(
+        "updateQuantity is a no-op when the item id doesn't exist",
+        arguments: RepositoryFactory.all)
+    func updateQuantityMissingIDIsNoOp(factory: RepositoryFactory) async throws {
+        let itemRepo = factory.make().item
+        // Random UUID — not in the empty repo. Should silently no-op,
+        // matching `update(_:)`'s missing-row semantics.
+        try await itemRepo.updateQuantity(id: UUID(), quantity: 99)
+    }
+
+    @Test(
+        "updateQuantity stamps updatedAt",
+        arguments: RepositoryFactory.all)
+    func updateQuantityStampsTimestamp(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let itemRepo = bundle.item
+        let house = try await household.currentHousehold()
+        let kitchen = Location(householdID: house.id, name: "Kitchen")
+        try await locationRepo.create(kitchen)
+
+        let originalDate = Date(timeIntervalSince1970: 1)
+        let item = Item(
+            locationID: kitchen.id,
+            name: "Sourdough",
+            createdAt: originalDate,
+            updatedAt: originalDate
+        )
+        try await itemRepo.create(item)
+
+        try await itemRepo.updateQuantity(id: item.id, quantity: 5)
+
+        let after = try #require(try await itemRepo.item(id: item.id))
+        #expect(after.createdAt == originalDate)
+        #expect(after.updatedAt > originalDate)
+    }
+
+    @Test(
         "search matches case-insensitively and trims empty queries",
         arguments: RepositoryFactory.all)
     func searchMatchesAndTrims(factory: RepositoryFactory) async throws {

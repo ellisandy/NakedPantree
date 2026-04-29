@@ -341,16 +341,22 @@ struct ItemDetailView: View {
             quantityModel = QuantityStepperModel(
                 initialQuantity: fetched.quantity,
                 persist: { newQuantity in
-                    // Re-fetch under the actor so we don't write a
-                    // stale `name` / `expiresAt` if those were
-                    // edited in another window. If the row vanished
-                    // between tap and write, drop the update — the
-                    // detail view's reload will catch up.
-                    guard var current = try await repository.item(id: fetched.id) else {
-                        return
-                    }
-                    current.quantity = newQuantity
-                    try await repository.update(current)
+                    // Issue #118: use the partial-update API so a
+                    // long-press burst can't race an edit-form save
+                    // and overwrite `name` / `expiresAt`. The previous
+                    // shape did fetch-modify-save of the whole `Item`,
+                    // which read stale fields in the window between a
+                    // form save and the stepper persist.
+                    // `updateQuantity` is atomic at the repository
+                    // layer — it touches only the quantity column. If
+                    // the row was deleted between debounce schedule
+                    // and persist, the implementation no-ops (same
+                    // shape as `update(_:)`'s missing-row semantics)
+                    // and the detail view's reload catches up.
+                    try await repository.updateQuantity(
+                        id: fetched.id,
+                        quantity: newQuantity
+                    )
                 },
                 onPersistFailure: {
                     Task { await reload() }
