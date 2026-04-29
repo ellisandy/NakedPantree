@@ -16,7 +16,7 @@ Naked Pantree
 ## 2. Subtitle
 
 ```
-Track everything. Waste less.
+Pants-optional pantry tracker.
 ```
 
 ## 3. Promotional Text
@@ -54,7 +54,7 @@ Most homes have food in three or four places. Most pantry apps assume one. Naked
 ## 5. Keywords
 
 ```
-pantry,groceries,inventory,expiration,food waste,fridge,freezer,sharing,household,icloud,expiry
+pantry, groceries, inventory, food waste, fridge, freezer, household
 ```
 
 ## 6. Support URL
@@ -72,7 +72,7 @@ https://github.com/ellisandy/NakedPantree
 ## 8. Copyright
 
 ```
-© 2026 Jack Ellis
+© 2026 Andrew Ellis
 ```
 
 ## 9. Age Rating
@@ -120,10 +120,10 @@ Apple's age-rating questionnaire — answer to every question is **None** unless
 Verified at draft time against Apple's published limits:
 
 - App Name: 13 / 30
-- Subtitle: 29 / 30
+- Subtitle: 30 / 30
 - Promotional Text: 140 / 170
 - Description: 1,617 / 4,000
-- Keywords: 95 / 100
+- Keywords: 68 / 100
 - Support URL: 41 / 255
 - Marketing URL: 41 / 255
 - Copyright: 17 / (no Apple-published limit)
