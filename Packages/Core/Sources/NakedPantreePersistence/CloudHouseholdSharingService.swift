@@ -3,18 +3,36 @@ import CoreData
 import NakedPantreeDomain
 import os
 
+/// Protocol seam over the share-preparation step so SwiftUI surfaces
+/// can be exercised without a real iCloud account. The production
+/// implementation is `CloudHouseholdSharingService` below; UI tests
+/// inject `StubHouseholdSharingService` (in the app target) to drive
+/// the Settings → Share Household path on CI without CloudKit.
+///
+/// Returns CloudKit types directly (`CKShare`, `CKContainer`) — the
+/// caller is `UICloudSharingController(preparationHandler:)` which
+/// requires both, so abstracting them away just for protocol-purity
+/// would force the call site to round-trip back through CloudKit
+/// types anyway. The protocol stays in `NakedPantreePersistence`
+/// (CloudKit-aware module) for the same reason.
+public protocol HouseholdSharingService: Sendable {
+    /// Look up an existing share rooted at `householdID`, or create
+    /// one if none exists yet. Throws if the household row doesn't
+    /// exist or if Core Data / CloudKit can't produce a share.
+    func prepareShare(
+        for householdID: Household.ID
+    ) async throws -> (CKShare, CKContainer)
+}
+
 /// Vends a `CKShare` rooted at a `Household` row, plus the `CKContainer`
 /// that owns it — exactly what `UICloudSharingController(preparationHandler:)`
 /// needs to invite participants. Phase 3.1 is the create + present flow;
 /// 3.2 wires up acceptance, 3.3 routes writes between private and shared
 /// stores.
 ///
-/// **Why this isn't behind a Domain protocol:** `CKShare` and
-/// `CKContainer` are CloudKit types — useless to a hypothetical macOS
-/// CLI consumer that doesn't sync. Lifting behind a protocol now would
-/// be premature indirection. If a non-iOS surface ever needs to invite
-/// participants, that's the moment to abstract.
-public final class CloudHouseholdSharingService: @unchecked Sendable {
+/// Conforms to `HouseholdSharingService` (above) so SwiftUI can hold
+/// `any HouseholdSharingService` and tests can swap in a stub.
+public final class CloudHouseholdSharingService: HouseholdSharingService, @unchecked Sendable {
     private let container: NSPersistentCloudKitContainer
     private let cloudKitContainer: CKContainer
 

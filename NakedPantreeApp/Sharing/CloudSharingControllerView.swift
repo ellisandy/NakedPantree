@@ -16,7 +16,7 @@ import os
 /// without inviting anyone.
 struct CloudSharingControllerView: UIViewControllerRepresentable {
     let householdID: Household.ID
-    let sharing: CloudHouseholdSharingService
+    let sharing: any HouseholdSharingService
 
     /// Fired when the controller dismisses (saved or cancelled). The
     /// caller drops the sheet binding and may want to refresh state.
@@ -165,5 +165,8 @@ struct CloudSharingControllerView: UIViewControllerRepresentable {
 extension EnvironmentValues {
     /// `nil` in previews / tests / snapshot mode — the "Share Household"
     /// button hides itself rather than presenting a broken sheet.
-    @Entry var householdSharing: CloudHouseholdSharingService?
+    /// Production binds `CloudHouseholdSharingService`; UI tests can
+    /// inject `StubHouseholdSharingService` via the `STUB_SHARING`
+    /// env var (see `NakedPantreeApp.init`).
+    @Entry var householdSharing: (any HouseholdSharingService)?
 }
