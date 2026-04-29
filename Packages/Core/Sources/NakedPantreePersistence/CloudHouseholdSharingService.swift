@@ -71,22 +71,30 @@ public final class CloudHouseholdSharingService: HouseholdSharingService, @unche
         let object = try await householdManagedObject(for: householdID)
         Self.logger.notice("got household managed object")
         let share: CKShare
+        // `share(_:to:)` returns `(Set<NSManagedObject>, CKShare, CKContainer)`.
+        // The third element is the CKContainer the system actually used for
+        // the share — even though it has the same identifier as the one we
+        // pre-built, `UICloudSharingController` reportedly refuses to render
+        // when handed a different `CKContainer` instance than the one the
+        // share was minted in (#90 theory 2). Capture it here and return it
+        // to the caller; only fall back to the injected `cloudKitContainer`
+        // for the existing-share branch where no `share(_:to:)` result is
+        // available.
+        let resolvedContainer: CKContainer
         if let existing = try existingShare(for: object) {
             Self.logger.notice("returning existing share")
             share = existing
+            resolvedContainer = cloudKitContainer
         } else {
             Self.logger.notice("calling NSPersistentCloudKitContainer.share")
-            // `share(_:to:)` returns `(Set<NSManagedObject>, CKShare, CKContainer)`.
-            // We only want the share — the modified objects are already
-            // persisted by the API, and the container is the same one
-            // the caller injected.
             let result = try await container.share([object], to: nil)
             Self.logger.notice("container.share returned a new CKShare")
             share = result.1
+            resolvedContainer = result.2
         }
         share[CKShare.SystemFieldKey.title] = "Naked Pantree"
         Self.logger.notice("prepareShare complete")
-        return (share, cloudKitContainer)
+        return (share, resolvedContainer)
     }
 
     /// Resolves the household domain id to its `NSManagedObject` on a
