@@ -94,6 +94,14 @@ targets:
       base:
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Naked Pantree.app/Naked Pantree"
+        # Test bundles get an auto-generated Info.plist. Required
+        # since apps#101 turned on signing in CI — without an Info.plist
+        # codesign refuses to sign the test bundle. Auto-gen is the
+        # standard pattern for test targets (Xcode default for new
+        # ones); we just have to opt in explicitly here because the
+        # main app target sets `GENERATE_INFOPLIST_FILE: NO` and the
+        # test targets pick up nothing from it.
+        GENERATE_INFOPLIST_FILE: YES
 
   NakedPantreeUITests:
     type: bundle.ui-testing
@@ -105,6 +113,8 @@ targets:
     settings:
       base:
         TEST_TARGET_NAME: NakedPantree
+        # Same auto-gen Info.plist as `NakedPantreeTests` — see above.
+        GENERATE_INFOPLIST_FILE: YES
 
 schemes:
   NakedPantree:
