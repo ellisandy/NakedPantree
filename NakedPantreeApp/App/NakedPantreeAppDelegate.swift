@@ -74,13 +74,27 @@ final class NakedPantreeAppDelegate:
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping @Sendable () -> Void
     ) {
-        defer { completionHandler() }
+        let userInfo = response.notification.request.content.userInfo
         guard
-            let id = notificationItemID(from: response.notification.request.content.userInfo),
+            let id = notificationItemID(from: userInfo),
             let routing = Self.notificationRouting
-        else { return }
+        else {
+            completionHandler()
+            return
+        }
+        // #119: previously this method used `defer { completionHandler() }`,
+        // which signalled "done" before the `Task { @MainActor in }` had
+        // a chance to publish `pendingItemID`. Two consecutive taps could
+        // interleave on MainActor and the *earlier* tap could win the
+        // routing slot, dropping the user's most recent intent. Call
+        // `completionHandler()` AFTER the publish: the Task is enqueued
+        // on MainActor before this nonisolated method returns, and
+        // tasks awaiting the same actor honour FIFO arrival order, so
+        // tap A's Task runs before tap B's Task and `pendingItemID`
+        // ends up matching the last tap.
         Task { @MainActor in
             routing.pendingItemID = id
+            completionHandler()
         }
     }
 }
