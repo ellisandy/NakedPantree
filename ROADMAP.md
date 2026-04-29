@@ -642,22 +642,23 @@ upload without drafts.
 | --- | --- | --- | --- |
 | 11.1a | App Store listing copy — name, subtitle, description, keywords, age rating, category (`docs/app-store-listing.md`) | agent | ✅ Merged ([apps#78](https://github.com/ellisandy/NakedPantree/pull/78)) |
 | 11.1b | App Privacy questionnaire answers + `PrivacyInfo.xcprivacy` plist plan (`docs/app-store-privacy.md`) | agent | ✅ Merged ([apps#78](https://github.com/ellisandy/NakedPantree/pull/78)) |
-| 11.1c | App Store screenshots per device family (run / extend the existing `SnapshotsUITests` pipeline to produce App-Store-spec sizes) | agent | ⏳ Deferred — produced near submission time when the human is doing the App Store Connect upload anyway |
+| 11.1c | App Store screenshots pipeline — `SnapshotsUITests` produces App-Store-spec PNGs on demand (1320×2868 iPhone 6.9", 2064×2752 iPad 13"), uploaded as workflow artifact | agent | ✅ Merged ([apps#86](https://github.com/ellisandy/NakedPantree/pull/86)) |
 | 11.1d | Ship `PrivacyInfo.xcprivacy` manifest (the code-side follow-up flagged in 11.1b §5 / §8) — `UserDefaults` reason `CA92.1`, empty `NSPrivacyCollectedDataTypes`, `NSPrivacyTracking=false` | agent | ✅ Merged ([apps#84](https://github.com/ellisandy/NakedPantree/pull/84)) |
-| 11.1e | Declare `ITSAppUsesNonExemptEncryption=false` in `Info.plist` — skips App Store Connect's per-upload export-compliance questionnaire ([#76](https://github.com/ellisandy/NakedPantree/issues/76)). Pre-flight verified: no `CryptoKit` / `CommonCrypto` / third-party crypto in tree | agent | 🟡 In review |
+| 11.1e | Declare `ITSAppUsesNonExemptEncryption=false` in `Info.plist` — skips App Store Connect's per-upload export-compliance questionnaire ([#76](https://github.com/ellisandy/NakedPantree/issues/76)). Pre-flight verified: no `CryptoKit` / `CommonCrypto` / third-party crypto in tree | agent | ✅ Merged ([apps#85](https://github.com/ellisandy/NakedPantree/pull/85)) |
 | 11.2 | App Store Connect record setup — paste 11.1a metadata, fill 11.1b privacy answers, upload 11.1c screenshots, set age rating / category / regions, choose pricing (free, all countries) | user | ⏳ Pending |
 | 11.3 | Final manual QA pass against `ARCHITECTURE.md §11` — two iCloud accounts, two devices, real iPhone + iPad + Mac (Designed for iPad). Sweeps up the still-pending real-device verification owed by Phases 8.2 / 8.3 / 9.{1..4} / 10.{1..4} | user | ⏳ Pending |
 | 11.4 | App Store submission + review iteration — submit, respond to Apple Review feedback, ship code-side fixes if Apple flags anything (privacy manifest already shipped in 11.1d) | hybrid | ⏳ Pending |
 | 11.5 | Release docs + retrospective — `DEVELOPMENT.md §6 / §7` final fills, ROADMAP close, tag `phase-11`, README version bump | agent | ⏳ Pending |
 
-> 11.1's three sub-pieces ran in parallel agent worktrees alongside
-> Phase 10. 11.1c (screenshots) ended without committing — the
-> existing snapshot pipeline doesn't produce App-Store-spec sizes
-> out of the box and the work was bigger than the agent budget.
-> Deferring it to 11.2's upload window is the right call:
-> Apple's specs change, the app's UI may shift between now and
-> submission, and re-running the pipeline at submission time is
-> cheap.
+> 11.1's three doc-side pieces (a / b) ran in parallel agent
+> worktrees alongside Phase 10. 11.1c initially deferred when the
+> first agent ran out of budget; 11.1d / 11.1e / 11.1c picked up
+> sequentially as small follow-up PRs once we needed each gap
+> filled before submission. With 11.1c's pipeline producing
+> exact-spec PNGs on demand, re-running the workflow against
+> `main` at submission time is the recommended flow — Apple's
+> specs change and the app's UI may shift between now and the
+> upload window.
 
 ---
 
