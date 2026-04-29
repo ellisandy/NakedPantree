@@ -46,25 +46,41 @@ final class SharingUITests: XCTestCase {
         // Open Settings via the sidebar's toolbar gear. Settings lives
         // in a `placement: .secondaryAction` ToolbarItem
         // (`SidebarView.swift`), which on iPhone collapses into a
-        // "More" / ellipsis menu. We expand the menu first if present;
-        // on devices/orientations where the gear is shown directly,
-        // we tap it without the menu hop.
+        // "More" / ellipsis menu. The exact label/identifier of the
+        // overflow button varies by iOS version — we try several
+        // and dump the full a11y hierarchy on failure for triage.
         let settingsButton = app.buttons["settings.toolbar.entry"]
-        if !settingsButton.waitForExistence(timeout: 2) {
-            let moreButton = app.navigationBars.buttons["More"]
-                .firstMatch
-            XCTAssertTrue(
-                moreButton.waitForExistence(timeout: 5),
-                "Sidebar's More menu button isn't reachable — "
-                    + "Settings entry has no path."
-            )
-            moreButton.tap()
+        let settingsByLabel = app.buttons["Settings"]
+
+        let initiallyFound =
+            settingsButton.waitForExistence(timeout: 2)
+            || settingsByLabel.waitForExistence(timeout: 1)
+        if !initiallyFound {
+            // Try common overflow-menu button labels on iOS.
+            let overflowCandidates = ["More", "…", "More Options"]
+            for candidate in overflowCandidates {
+                let button = app.buttons[candidate]
+                if button.waitForExistence(timeout: 1) {
+                    button.tap()
+                    break
+                }
+            }
         }
+
+        let foundAfterMenu =
+            settingsButton.waitForExistence(timeout: 5)
+            || settingsByLabel.waitForExistence(timeout: 1)
         XCTAssertTrue(
-            settingsButton.waitForExistence(timeout: 5),
-            "Settings entry button is missing from the sidebar toolbar."
+            foundAfterMenu,
+            "Settings entry not reachable. ID-match: \(settingsButton.exists), "
+                + "label-match: \(settingsByLabel.exists). "
+                + "Hierarchy:\n\(app.debugDescription)"
         )
-        settingsButton.tap()
+        if settingsButton.exists {
+            settingsButton.tap()
+        } else {
+            settingsByLabel.tap()
+        }
 
         // Confirm Settings opened by waiting for the household name row
         // — the same row that gates the Share Household button.
