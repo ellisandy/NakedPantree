@@ -156,28 +156,20 @@ struct RootView: View {
         let monitor = remoteChangeMonitor
         let statusMonitor = accountStatusMonitor
         return {
-            // No-op monitor (preview / snapshot / EMPTY_STORE / unit
-            // test host paths) → no remote-change tick will ever
-            // arrive. Skip the wait so bootstrap falls through to
-            // create immediately rather than burning the timeout
-            // every cold launch in those configurations.
-            guard monitor.isObserving else { return }
-            let isAvailable = await MainActor.run { statusMonitor.status == .available }
-            guard isAvailable else { return }
-            let initial = await MainActor.run { monitor.changeToken }
-            // Poll every ~75ms until the token bumps or the task is
-            // cancelled by the bootstrap timeout. The monitor's own
-            // 120ms debounce dominates the worst-case wakeup latency
-            // anyway — a tighter poll buys nothing real.
-            while !Task.isCancelled {
-                do {
-                    try await Task.sleep(for: .milliseconds(75))
-                } catch {
-                    return
+            // The wait logic itself lives in `RemoteChangeWaiter.wait`
+            // for testability (#116). This closure just bridges the
+            // SwiftUI environment monitors into the function's
+            // closure parameters, hopping to MainActor for each
+            // observable read.
+            await RemoteChangeWaiter.wait(
+                isObserving: { monitor.isObserving },
+                accountStatusIsAvailable: {
+                    await MainActor.run { statusMonitor.status == .available }
+                },
+                changeToken: {
+                    await MainActor.run { monitor.changeToken }
                 }
-                let current = await MainActor.run { monitor.changeToken }
-                if current != initial { return }
-            }
+            )
         }
     }
 
