@@ -66,6 +66,19 @@ targets:
           PRODUCT_BUNDLE_IDENTIFIER: cc.mnmlst.nakedpantree
           PRODUCT_NAME: "Naked Pantree"
           CODE_SIGN_ENTITLEMENTS: NakedPantreeApp/Resources/NakedPantree.entitlements
+          # Manual signing for Release (issue #92). These have to live
+          # on the main app target — passing them on the xcodebuild
+          # cmdline cascades to SwiftPM-generated resource bundles
+          # (e.g. Core_NakedPantreePersistence) which reject profile
+          # specifiers. CI imports the matching cert + profile via
+          # `.github/workflows/testflight-beta.yml`; local archives
+          # need the same "Github Publish" profile installed via
+          # `open ~/Downloads/Github_Publish.mobileprovision` and the
+          # "Apple Distribution: Andrew Ellis" cert in the login
+          # keychain. Debug stays Automatic — see `base` above.
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Distribution"
+          PROVISIONING_PROFILE_SPECIFIER: "Github Publish"
 
   NakedPantreeTests:
     type: bundle.unit-test
