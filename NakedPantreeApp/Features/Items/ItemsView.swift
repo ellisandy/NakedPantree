@@ -186,7 +186,7 @@ struct ItemsView: View {
             // someone three days from now. Safe even when no request
             // was scheduled — `removePendingNotificationRequests` is a
             // no-op for unknown ids.
-            notificationScheduler.cancel(itemID: item.id)
+            await notificationScheduler.cancel(itemID: item.id)
             if case .location(let id) = selection {
                 await reload(locationID: id)
             }
