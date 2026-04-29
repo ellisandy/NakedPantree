@@ -949,45 +949,176 @@ The shape, per `ARCHITECTURE.md` §10:
   uploads to TestFlight via `xcrun altool`. Same runner.
 - **App Store releases:** manual until there's a reason to automate.
 
-### TestFlight upload secrets
+### Signing model
 
-The `testflight-beta.yml` workflow needs three repo secrets, all
-generated from a single App Store Connect API key with **App Manager**
-role:
+Phase 11 / issue #92 moved both workflows to **fully manual signing**
+with the cert + profile stored in repo secrets. Originally
+`testflight-beta.yml` used `xcodebuild -allowProvisioningUpdates`,
+which re-minted a fresh Apple Distribution certificate per CI run
+and silently filled the team's ~3-cert quota until uploads started
+to fail. Manual signing is deterministic — same cert, same profile,
+every run.
 
-| Secret | What it is |
-| --- | --- |
-| `APP_STORE_CONNECT_API_KEY_ID` | Short identifier from the API key page (e.g. `ABCD1234EF`). |
-| `APP_STORE_CONNECT_API_ISSUER_ID` | UUID at the top of the **Users and Access → Keys** tab. |
-| `APP_STORE_CONNECT_API_KEY` | The downloaded `.p8` file. Either paste the file contents directly (`pbcopy < AuthKey_*.p8`) or its base64 encoding (`base64 -i AuthKey_*.p8 \| pbcopy`) — the workflow detects which one and acts accordingly. |
+`project.yml` pins manual signing on the main app target's `base`
+config (so it applies to both Debug and Release):
 
-The 10-character Apple **Team ID** isn't a secret — it appears
-publicly on App Store listings — so it's hardcoded in `project.yml`
+```yaml
+CODE_SIGN_STYLE: Manual
+CODE_SIGN_IDENTITY: "Apple Distribution"
+PROVISIONING_PROFILE_SPECIFIER: "Github Publish"
+```
+
+The split between a `cc.mnmlst.nakedpantree.dev` Debug build and a
+`cc.mnmlst.nakedpantree` Release build was collapsed in apps#101 —
+both configs now use the same bundle id, entitlements file, and
+iCloud container. Local Xcode-Run debug builds therefore need the
+same cert + profile installed as CI uses (see "Local-dev signing
+setup" below).
+
+### Repo secrets
+
+The two workflows together need **six** repo secrets:
+
+| Secret | Used by | What it is |
+| --- | --- | --- |
+| `APP_STORE_CONNECT_API_KEY_ID` | `testflight-beta.yml` | Short ID from the API key page (e.g. `ABCD1234EF`). |
+| `APP_STORE_CONNECT_API_ISSUER_ID` | `testflight-beta.yml` | UUID from **Users and Access → Keys**. |
+| `APP_STORE_CONNECT_API_KEY` | `testflight-beta.yml` | App Store Connect API `.p8` (paste contents directly or base64). |
+| `BUILD_CERTIFICATE_BASE64` | both | Base64 of an Apple Distribution `.p12` (cert + private key). |
+| `P12_PASSWORD` | both | Password used when exporting the `.p12`. |
+| `PROVISIONING_PROFILE_BASE64` | both | Base64 of the "Github Publish" `.mobileprovision`. |
+
+The 10-character Apple **Team ID** isn't a secret (it's published
+on App Store listings), so it's hardcoded in `project.yml`
 (`DEVELOPMENT_TEAM: …`) and `testflight-beta.yml`'s
 `exportOptions.plist`. Update both if Apple ever reissues the team.
 
-> **Wrong key type is the #1 setup gotcha.** Apple has multiple `.p8`
-> formats: APNs keys, in-app purchase keys, App Store Connect API
-> keys. They look identical (PEM-formatted EC private keys, ~250
-> bytes) but only the **App Store Connect API key** signs JWTs for
-> TestFlight upload. Generate it at
+> **Wrong key type is the #1 setup gotcha for the API key.** Apple
+> has multiple `.p8` formats: APNs keys, in-app purchase keys, App
+> Store Connect API keys. They look identical (PEM-formatted EC
+> private keys, ~250 bytes) but only the **App Store Connect API
+> key** signs JWTs for TestFlight upload. Generate at
 > https://appstoreconnect.apple.com/access/api with the
 > **App Manager** role.
 
-Code-signing certificates and provisioning profiles are **not** stored
-as secrets — `xcodebuild -allowProvisioningUpdates` regenerates them
-via the API key on every run. The `.p8` itself is decoded into the
-runner's `~/.appstoreconnect/private_keys/` directory at job start
-and disappears with the runner.
+### Cert rotation runbook
+
+The Apple Distribution cert expires **once a year**. When CI starts
+failing with `errSecCertificateExpired` or App Store Connect refuses
+the upload with "expired certificate," follow these steps:
+
+1. **Audit current certs.** Apple Developer → Certificates → list.
+   Note any "Apple Distribution" entries, especially the one
+   currently used. Revoke any that are stale or extras (the team
+   only allows ~3 active).
+2. **Generate the new cert.** Keychain Access on your Mac →
+   Certificate Assistant → "Request a Certificate from a CA" →
+   save to disk. Upload the CSR at developer.apple.com →
+   Certificates → "+" → **Apple Distribution**. Download the `.cer`
+   and double-click to install. Verify the cert appears in
+   Keychain Access → My Certificates with a **private key
+   underneath the disclosure triangle** — Apple only releases the
+   private key once, at creation, and it has to be present to be
+   useful.
+3. **Export the `.p12`.** In Keychain Access, multi-select the cert
+   AND its private key, right-click → **Export 2 items…** → choose
+   `.p12` format → set a strong password (≥20 char random,
+   stash in your password manager).
+4. **Generate a fresh App Store provisioning profile.** Apple
+   Developer → Profiles → "+" → Distribution → App Store Connect →
+   App ID `cc.mnmlst.nakedpantree` → certificate = the new
+   Distribution cert → name `Github Publish` (matching
+   `PROVISIONING_PROFILE_SPECIFIER` in `project.yml`) → download
+   the `.mobileprovision`.
+5. **Update repo secrets** at GitHub → repo → Settings → Secrets
+   and variables → Actions:
+   - `BUILD_CERTIFICATE_BASE64` ← `base64 -i <p12-path> | pbcopy`
+   - `P12_PASSWORD` ← the password from step 3
+   - `PROVISIONING_PROFILE_BASE64` ← `base64 -i <profile-path> | pbcopy`
+6. **Install the new profile locally** so Xcode-Run still works:
+   ```sh
+   PROFILE_UUID=$(security cms -D -i <profile-path> | plutil -extract UUID raw -)
+   mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+   cp <profile-path> "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+   ```
+7. **Verify.** Trigger `workflow_dispatch` on the `testflight-beta`
+   workflow against `main`. Run should land green and produce a
+   build that appears in TestFlight processing. If the
+   `Set up signing keychain` step's `security find-identity` line
+   shows the new cert's identity, you're done.
+
+### Local-dev signing setup
+
+Once the project pins manual signing, every dev machine needs:
+
+1. **The Apple Distribution cert** in the login keychain — install
+   the same `.p12` exported during cert rotation (step 3 above), or
+   use a fresh CSR + cert if the existing private key isn't on this
+   Mac.
+2. **The "Github Publish" provisioning profile** installed:
+   ```sh
+   PROFILE_UUID=$(security cms -D -i ~/Downloads/Github_Publish.mobileprovision | plutil -extract UUID raw -)
+   mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+   cp ~/Downloads/Github_Publish.mobileprovision "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+   ```
+
+Without these, Xcode → Run will fail at codesign with "Provisioning
+profile required" or "no signing certificate found." It is the
+same setup CI does on every fresh runner.
 
 ### Build numbering
 
-`CFBundleVersion` is overridden to `$GITHUB_RUN_NUMBER` at archive
-time so each upload has a strictly increasing build number without
-needing a commit-back step. Marketing version
-(`CFBundleShortVersionString`) lives in
+`CFBundleVersion` in `Info.plist` reads `$(CURRENT_PROJECT_VERSION)`,
+which `testflight-beta.yml` overrides to `$GITHUB_RUN_NUMBER` at
+archive time. Each upload therefore lands as a strictly increasing
+build number without a commit-back step.
+
+> An earlier version of `Info.plist` had `<string>1</string>`
+> hardcoded — the cmdline override didn't reach the literal value
+> and every "successful" CI run silently shipped as build 1, which
+> Apple rejected as `≤` an existing build. The
+> `$(CURRENT_PROJECT_VERSION)` substitution is what fixed that
+> (apps#95). Don't put a literal back in.
+
+The upload step also greps `xcrun altool`'s output for `ERROR:` /
+`Failed to upload` and fails the workflow if found — `altool` can
+exit 0 on Apple-side rejection (e.g. duplicate build number) and
+without the grep guard a rejected upload looked green in Actions.
+
+Marketing version (`CFBundleShortVersionString`) lives in
 `NakedPantreeApp/Resources/Info.plist`; bump it by hand at milestone
 boundaries.
+
+### Build-test signing
+
+`build-test.yml` originally used `CODE_SIGNING_ALLOWED=NO` to skip
+needing a cert/profile on CI runners. That stopped working when
+the test suite started constructing `CKContainer` /
+`NSPersistentCloudKitContainer` for #90 coverage — those tests
+hung waiting for the `com.apple.developer.icloud-services`
+entitlement that the unsigned binary didn't have.
+
+apps#101 added the same keychain dance to `build-test.yml` that
+`testflight-beta.yml` uses. CI tests now run with a properly-signed
+binary that has the iCloud entitlement, so CK pre-flight passes
+and tests can construct CK types without hangs. The simulator does
+**not** sign in to iCloud — that's intentional. Tests cover code
+that runs *before* the iCloud round-trip; they don't drive
+`share(_:to:)`'s happy path or `fetchShares`'s real return values.
+
+The boundary is:
+
+- ✅ Construct `CKContainer` and `NSPersistentCloudKitContainer`
+- ✅ Lookup-error paths in `prepareShare` that throw before the CK call
+- ✅ Error-handling code that maps `CKError`s
+- ✅ The `withTaskGroup` timeout race in `runPrepareShareWithTimeout`
+- ❌ Real `share(_:to:)` happy path
+- ❌ Real `fetchShares(matching:)`
+- ❌ CKShare invitation delivery (needs APNs)
+
+Anything in the second group is manual-test territory until/unless
+CI gets a real iCloud account (a substantial separate lift —
+account management, 2FA, security exposure).
 
 ### CloudKit Production deploy
 
