@@ -1,6 +1,7 @@
 import CoreData
 import NakedPantreePersistence
 import SwiftUI
+import os
 
 /// Bumps `changeToken` whenever the persistence layer reports a
 /// non-self-emitted remote change — local writes by another household
@@ -219,11 +220,15 @@ final class RemoteChangeMonitor {
     /// `NSManagedObjectModel`.
     /// `Sendable` wrapper around the input token to `fetchHistory`. See
     /// `HistoryFetchOutcome` for the same `@unchecked Sendable` rationale.
-    private struct SendableHistoryToken: @unchecked Sendable {
+    /// `internal` (not `private`) so `RemoteChangeMonitorFailureTests`
+    /// can construct one for the failure-path test (issue #114).
+    struct SendableHistoryToken: @unchecked Sendable {
         let token: NSPersistentHistoryToken?
     }
 
-    private struct HistoryFetchOutcome: @unchecked Sendable {
+    /// `internal` (not `private`) so the failure-path test can read
+    /// the `failed` flag on the returned outcome (issue #114).
+    struct HistoryFetchOutcome: @unchecked Sendable {
         var newToken: NSPersistentHistoryToken?
         var hasNonLocal: Bool
         var failed: Bool
@@ -255,9 +260,24 @@ final class RemoteChangeMonitor {
     /// negative filter). Anything we didn't stamp ourselves is, by
     /// definition, not us.
     ///
+    /// Logger for history-fetch failures (issue #114). The execute call
+    /// can throw on a corrupt history store, a token from a wiped
+    /// store, or a schema-skew window after a Core Data migration.
+    /// Pre-#114 the failure was swallowed silently and the next
+    /// refresh re-ran the same range forever; logging at least makes
+    /// it discoverable in Console.app under
+    /// `subsystem:cc.mnmlst.nakedpantree, category:remote-change`.
+    nonisolated private static let logger = Logger(
+        subsystem: "cc.mnmlst.nakedpantree",
+        category: "remote-change"
+    )
+
     /// `nonisolated` so the continuation closure can call into it from
     /// the Core Data queue without crossing the MainActor boundary.
-    nonisolated private static func fetchHistory(
+    /// `internal` (not `private`) so `RemoteChangeMonitorFailureTests`
+    /// can drive the failure branch directly with a context that
+    /// rejects `NSPersistentHistoryChangeRequest`.
+    nonisolated static func fetchHistory(
         after token: SendableHistoryToken,
         in context: NSManagedObjectContext
     ) async -> HistoryFetchOutcome {
@@ -287,6 +307,15 @@ final class RemoteChangeMonitor {
                         )
                     )
                 } catch {
+                    // Pre-#114 silent swallow. The token is *not*
+                    // updated, so `refresh()` will re-fetch the same
+                    // range on the next remote-change tick — at
+                    // worst, redundant CPU until the underlying error
+                    // resolves (history store re-initializes,
+                    // migration completes, etc.).
+                    Self.logger.error(
+                        "history fetch failed: \(error.localizedDescription, privacy: .public)"
+                    )
                     continuation.resume(returning: .failure)
                 }
             }
