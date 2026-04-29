@@ -47,19 +47,19 @@ struct CloudSharingControllerView: UIViewControllerRepresentable {
     nonisolated private static let prepareShareTimeout: Duration = .seconds(60)
 
     func makeUIViewController(context: Context) -> UICloudSharingController {
-        Self.logger.info("makeUIViewController: creating UICloudSharingController")
+        Self.logger.notice("makeUIViewController: creating UICloudSharingController")
         let controller = UICloudSharingController { _, completion in
             // The controller calls this on the main queue once it's
             // ready to show participant UI. We race `prepareShare`
             // against a timeout (#90) so a hang surfaces as an error
             // alert instead of a blank sheet.
-            Self.logger.info("preparation handler fired — racing prepareShare against timeout")
+            Self.logger.notice("preparation handler fired — racing prepareShare against timeout")
             Task {
                 let outcome = await runPrepareShareWithTimeout()
                 await MainActor.run {
                     switch outcome {
                     case .success(let payload):
-                        Self.logger.info("preparation handler: completion(share, container, nil)")
+                        Self.logger.notice("preparation handler: completion(share, container, nil)")
                         completion(payload.share, payload.container, nil)
                     case .failure(let error):
                         let description = error.localizedDescription

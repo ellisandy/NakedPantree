@@ -1,5 +1,6 @@
 import NakedPantreeDomain
 import SwiftUI
+import os
 
 /// User-level Settings screen. Phase 9.3 introduced the reminder-time
 /// picker; Phase 10.1 (issue #60) folds household management in next to
@@ -34,6 +35,18 @@ struct SettingsView: View {
     @State private var household: Household?
     @State private var isPresentingShareSheet = false
 
+    /// Trace for #90 (blank Share Household sheet on TestFlight).
+    /// Same subsystem/category as `CloudSharingControllerView` and
+    /// `CloudHouseholdSharingService` so a single Console.app filter
+    /// — `subsystem:cc.mnmlst.nakedpantree` — captures the full
+    /// share path. `notice` level so messages show without the
+    /// "Include Info Messages" toggle. Lifetime: keep until #90
+    /// is closed, then trim to whatever turns out to be load-bearing.
+    private static let logger = Logger(
+        subsystem: "cc.mnmlst.nakedpantree",
+        category: "sharing"
+    )
+
     var body: some View {
         @Bindable var settings = settings
         NavigationStack {
@@ -58,6 +71,22 @@ struct SettingsView: View {
                         onCompletion: { isPresentingShareSheet = false }
                     )
                     .ignoresSafeArea()
+                } else {
+                    // Diagnostic fallback for #90. If the sheet
+                    // presents but the if-let above fails, the user
+                    // sees a blank sheet — exactly the reported
+                    // symptom. The .onAppear log captures which input
+                    // was nil so the bug surfaces in Console without
+                    // needing to attach a debugger.
+                    Color.clear
+                        .onAppear {
+                            let householdState = household != nil ? "set" : "nil"
+                            let sharingState = householdSharing != nil ? "set" : "nil"
+                            Self.logger.error(
+                                // swiftlint:disable:next line_length
+                                "share sheet presented but if-let failed — household=\(householdState, privacy: .public) sharing=\(sharingState, privacy: .public)"
+                            )
+                        }
                 }
             }
             .task { await loadHousehold() }
@@ -82,6 +111,16 @@ struct SettingsView: View {
             // empty in those contexts.
             if householdSharing != nil {
                 Button {
+                    // First log line of the share path — earliest
+                    // possible signal that the user actually tapped.
+                    // `notice` level so the message is visible in
+                    // Console.app without enabling Info messages.
+                    let householdState = household != nil ? "set" : "nil"
+                    let sharingState = householdSharing != nil ? "set" : "nil"
+                    Self.logger.notice(
+                        // swiftlint:disable:next line_length
+                        "share button tapped — household=\(householdState, privacy: .public) sharing=\(sharingState, privacy: .public)"
+                    )
                     isPresentingShareSheet = true
                 } label: {
                     Label("Share Household", systemImage: "person.crop.circle.badge.plus")

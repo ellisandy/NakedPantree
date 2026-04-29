@@ -49,25 +49,25 @@ public final class CloudHouseholdSharingService: @unchecked Sendable {
     public func prepareShare(
         for householdID: Household.ID
     ) async throws -> (CKShare, CKContainer) {
-        Self.logger.info("prepareShare start: \(householdID, privacy: .public)")
+        Self.logger.notice("prepareShare start: \(householdID, privacy: .public)")
         let object = try await householdManagedObject(for: householdID)
-        Self.logger.info("got household managed object")
+        Self.logger.notice("got household managed object")
         let share: CKShare
         if let existing = try existingShare(for: object) {
-            Self.logger.info("returning existing share")
+            Self.logger.notice("returning existing share")
             share = existing
         } else {
-            Self.logger.info("calling NSPersistentCloudKitContainer.share")
+            Self.logger.notice("calling NSPersistentCloudKitContainer.share")
             // `share(_:to:)` returns `(Set<NSManagedObject>, CKShare, CKContainer)`.
             // We only want the share — the modified objects are already
             // persisted by the API, and the container is the same one
             // the caller injected.
             let result = try await container.share([object], to: nil)
-            Self.logger.info("container.share returned a new CKShare")
+            Self.logger.notice("container.share returned a new CKShare")
             share = result.1
         }
         share[CKShare.SystemFieldKey.title] = "Naked Pantree"
-        Self.logger.info("prepareShare complete")
+        Self.logger.notice("prepareShare complete")
         return (share, cloudKitContainer)
     }
 
