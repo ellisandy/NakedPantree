@@ -170,14 +170,15 @@ func staleExpiryIdentifiers(
 /// AppIntents or watchOS need it.
 @MainActor
 final class NotificationScheduler {
-    /// `nonisolated(unsafe)` so the no-op `nonisolated init()` below
-    /// can write the `nil` initial value at construction. The class
-    /// stays `@MainActor` for ergonomic consistency with
-    /// `RemoteChangeMonitor` / `AccountStatusMonitor`;
-    /// `UNUserNotificationCenter` is documented as thread-safe so
-    /// the unsafe qualifier is sound — only the storage write needs
-    /// the relaxation, not the underlying API.
-    nonisolated(unsafe) private let center: UNUserNotificationCenter?
+    /// Issue #113 introduced a protocol seam over the
+    /// `UNUserNotificationCenter` slice this class uses, so tests
+    /// can drive every branch without the system center. Production
+    /// wraps the system center via `LiveNotificationCenter`; the
+    /// no-op initializer stores `nil`. `(any NotificationCenterServicing)?`
+    /// is `Sendable` (the protocol is `Sendable` and Optional<Sendable>
+    /// is Sendable), so the `nonisolated(unsafe)` qualifier the old
+    /// `UNUserNotificationCenter?` storage needed has been dropped.
+    private let center: (any NotificationCenterServicing)?
 
     /// Phase 9.3: optional reference to the user's notification
     /// preferences. Drives the wall-clock reminder time. `nil` for
@@ -197,12 +198,29 @@ final class NotificationScheduler {
         self.settings = nil
     }
 
-    /// Production initializer. `settings` is optional so callers that
-    /// want the previous hardcoded 9:00 AM behavior (e.g. tests that
-    /// don't care about the picker) can still construct without one.
+    /// Production initializer. Wraps the system
+    /// `UNUserNotificationCenter` in a `LiveNotificationCenter`.
+    /// `settings` is optional so callers that want the previous
+    /// hardcoded 9:00 AM behavior can still construct without one.
     /// `NakedPantreeApp` always passes a real one in production.
-    init(center: UNUserNotificationCenter, settings: NotificationSettings? = nil) {
-        self.center = center
+    convenience init(
+        center: UNUserNotificationCenter,
+        settings: NotificationSettings? = nil
+    ) {
+        self.init(
+            servicing: LiveNotificationCenter(center: center),
+            settings: settings
+        )
+    }
+
+    /// Test-friendly initializer. Accepts any `NotificationCenterServicing`
+    /// — production wires `LiveNotificationCenter`; tests inject a
+    /// stub that records calls.
+    init(
+        servicing: any NotificationCenterServicing,
+        settings: NotificationSettings? = nil
+    ) {
+        self.center = servicing
         self.settings = settings
     }
 
@@ -228,7 +246,7 @@ final class NotificationScheduler {
         let id = Self.identifier(for: item.id)
 
         guard let expiresAt = item.expiresAt else {
-            center.removePendingNotificationRequests(withIdentifiers: [id])
+            await center.removePendingNotificationRequests(withIdentifiers: [id])
             return
         }
 
@@ -241,7 +259,7 @@ final class NotificationScheduler {
         else {
             // Lead-time window has passed. Drop any older request that
             // might still be pending from a previous expiry value.
-            center.removePendingNotificationRequests(withIdentifiers: [id])
+            await center.removePendingNotificationRequests(withIdentifiers: [id])
             return
         }
 
@@ -278,9 +296,13 @@ final class NotificationScheduler {
 
     /// Removes the pending request for an item. Used by the delete
     /// path, which only has the id once the row is gone.
-    func cancel(itemID: Item.ID) {
+    /// `async` since #113 — the underlying protocol's removal is
+    /// async-shaped to keep the test stub free to use an actor.
+    func cancel(itemID: Item.ID) async {
         guard let center else { return }
-        center.removePendingNotificationRequests(withIdentifiers: [Self.identifier(for: itemID)])
+        await center.removePendingNotificationRequests(
+            withIdentifiers: [Self.identifier(for: itemID)]
+        )
     }
 
     /// Brings pending expiry notifications into agreement with the
@@ -311,8 +333,8 @@ final class NotificationScheduler {
     /// prompt because that's the contextual moment.
     func resync(currentItems: [Item]) async {
         guard let center else { return }
-        let settings = await center.notificationSettings()
-        switch settings.authorizationStatus {
+        let status = await center.authorizationStatus()
+        switch status {
         case .authorized, .provisional, .ephemeral:
             break
         case .notDetermined, .denied:
@@ -332,11 +354,11 @@ final class NotificationScheduler {
             await scheduleBundle(bundle, on: center)
         }
 
-        let pending = await center.pendingNotificationRequests().map(\.identifier)
+        let pending = await center.pendingNotificationIdentifiers()
         let expected = Set(bundles.map(\.identifier))
         let stale = staleBundleIdentifiers(pending: pending, expected: expected)
         if !stale.isEmpty {
-            center.removePendingNotificationRequests(withIdentifiers: stale)
+            await center.removePendingNotificationRequests(withIdentifiers: stale)
         }
     }
 
@@ -353,7 +375,7 @@ final class NotificationScheduler {
     /// that item, same as before.
     private func scheduleBundle(
         _ bundle: ExpiryNotificationBundle,
-        on center: UNUserNotificationCenter
+        on center: any NotificationCenterServicing
     ) async {
         guard await ensureAuthorization(center: center) else { return }
 
@@ -396,16 +418,16 @@ final class NotificationScheduler {
         }
     }
 
-    private func ensureAuthorization(center: UNUserNotificationCenter) async -> Bool {
-        let settings = await center.notificationSettings()
-        switch settings.authorizationStatus {
+    private func ensureAuthorization(center: any NotificationCenterServicing) async -> Bool {
+        let status = await center.authorizationStatus()
+        switch status {
         case .authorized, .provisional, .ephemeral:
             return true
         case .denied:
             return false
         case .notDetermined:
             do {
-                return try await center.requestAuthorization(options: [.alert, .sound, .badge])
+                return try await center.requestAuthorization()
             } catch {
                 return false
             }
