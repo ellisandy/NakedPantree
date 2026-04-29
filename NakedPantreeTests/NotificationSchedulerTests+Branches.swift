@@ -33,7 +33,7 @@ struct NotificationSchedulerBranchTests {
         let itemID = UUID()
         await scheduler.cancel(itemID: itemID)
 
-        let removed = await center.removedIdentifiersBatches
+        let removed = center.removedIdentifiersBatches
         #expect(removed.count == 1)
         #expect(removed.first == [NotificationScheduler.identifier(for: itemID)])
     }
@@ -48,8 +48,8 @@ struct NotificationSchedulerBranchTests {
         let item = Item(locationID: UUID(), name: "Olive oil")
         await scheduler.scheduleIfNeeded(for: item)
 
-        let removed = await center.removedIdentifiersBatches
-        let added = await center.addedRequests
+        let removed = center.removedIdentifiersBatches
+        let added = center.addedRequests
         #expect(removed.count == 1, "Expected one removal pass for the nil-expiry case.")
         #expect(removed.first == [NotificationScheduler.identifier(for: item.id)])
         #expect(added.isEmpty, "Nil expiry must not schedule a request.")
@@ -70,8 +70,8 @@ struct NotificationSchedulerBranchTests {
         )
         await scheduler.scheduleIfNeeded(for: item)
 
-        let added = await center.addedRequests
-        let removed = await center.removedIdentifiersBatches
+        let added = center.addedRequests
+        let removed = center.removedIdentifiersBatches
         #expect(added.isEmpty, "Past trigger must not add a request.")
         #expect(removed.count == 1, "Expected one removal pass for the past-trigger case.")
     }
@@ -80,7 +80,7 @@ struct NotificationSchedulerBranchTests {
     @MainActor
     func scheduleIfNeededDeniedSkips() async throws {
         let center = StubNotificationCenter()
-        await center.setAuthorizationStatus(.denied)
+        center.setAuthorizationStatus(.denied)
         let scheduler = NotificationScheduler(servicing: center)
         // Future expiry well within the lead-time window.
         let futureExpiry = Date(timeIntervalSinceNow: 10 * 24 * 60 * 60)
@@ -91,7 +91,7 @@ struct NotificationSchedulerBranchTests {
         )
         await scheduler.scheduleIfNeeded(for: item)
 
-        let added = await center.addedRequests
+        let added = center.addedRequests
         #expect(added.isEmpty, "Denied authorization must not schedule.")
     }
 
@@ -99,7 +99,7 @@ struct NotificationSchedulerBranchTests {
     @MainActor
     func scheduleIfNeededAuthorizedSchedules() async throws {
         let center = StubNotificationCenter()
-        await center.setAuthorizationStatus(.authorized)
+        center.setAuthorizationStatus(.authorized)
         let scheduler = NotificationScheduler(servicing: center)
         let futureExpiry = Date(timeIntervalSinceNow: 10 * 24 * 60 * 60)
         let item = Item(
@@ -109,7 +109,7 @@ struct NotificationSchedulerBranchTests {
         )
         await scheduler.scheduleIfNeeded(for: item)
 
-        let added = await center.addedRequests
+        let added = center.addedRequests
         #expect(added.count == 1)
         let request = try #require(added.first)
         #expect(request.identifier == NotificationScheduler.identifier(for: item.id))
@@ -123,12 +123,12 @@ struct NotificationSchedulerBranchTests {
     @MainActor
     func resyncNotDeterminedBails() async throws {
         let center = StubNotificationCenter()
-        await center.setAuthorizationStatus(.notDetermined)
+        center.setAuthorizationStatus(.notDetermined)
         let scheduler = NotificationScheduler(servicing: center)
         await scheduler.resync(currentItems: [])
 
-        let auth = await center.requestAuthorizationCallCount
-        let added = await center.addedRequests
+        let auth = center.requestAuthorizationCallCount
+        let added = center.addedRequests
         #expect(auth == 0, "resync must not prompt — Phase 4.3 contract.")
         #expect(added.isEmpty, "resync must not schedule when notDetermined.")
     }
@@ -137,23 +137,18 @@ struct NotificationSchedulerBranchTests {
     @MainActor
     func resyncDeniedBails() async throws {
         let center = StubNotificationCenter()
-        await center.setAuthorizationStatus(.denied)
+        center.setAuthorizationStatus(.denied)
         let scheduler = NotificationScheduler(servicing: center)
         // Items present so we can verify nothing got scheduled.
         let item = Item(
-            id: UUID(),
+            locationID: UUID(),
             name: "Spinach",
-            quantity: 1,
-            unit: .count,
-            expiresAt: Date(timeIntervalSinceNow: 10 * 24 * 60 * 60),
-            notes: nil,
-            createdAt: Date(),
-            updatedAt: Date()
+            expiresAt: Date(timeIntervalSinceNow: 10 * 24 * 60 * 60)
         )
         await scheduler.resync(currentItems: [item])
 
-        let added = await center.addedRequests
-        let removed = await center.removedIdentifiersBatches
+        let added = center.addedRequests
+        let removed = center.removedIdentifiersBatches
         #expect(added.isEmpty)
         #expect(removed.isEmpty, "resync must not even sweep stale ids when denied.")
     }
@@ -161,56 +156,78 @@ struct NotificationSchedulerBranchTests {
 
 // MARK: - Stub
 
-/// Actor-based stub that records every call. Lives at file scope so
-/// the suite types (which are `MainActor`-isolated by virtue of the
-/// `@MainActor` test annotations) can construct it from any test
-/// without isolation gymnastics.
-actor StubNotificationCenter: NotificationCenterServicing {
-    private var status: UNAuthorizationStatus = .authorized
-    private var grant: Bool = true
-    private(set) var addedRequests: [UNNotificationRequest] = []
-    private(set) var removedIdentifiersBatches: [[String]] = []
-    private var pendingIdentifiersValue: [String] = []
-    private(set) var requestAuthorizationCallCount: Int = 0
-    private var addError: Error?
+/// Class-based stub with `@unchecked Sendable` + an internal `NSLock`
+/// for thread-safe state mutation. We can't use an `actor` because
+/// `UNNotificationRequest` is non-`Sendable` and can't cross an actor
+/// boundary; the `sending` parameter marker (which we tried first in
+/// apps#123 development) doesn't help on Xcode 26.2's strict-mode
+/// compiler. Hand-rolled locking is the canonical workaround for
+/// non-Sendable types behind an isolation barrier.
+final class StubNotificationCenter: NotificationCenterServicing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedStatus: UNAuthorizationStatus = .authorized
+    private var storedGrant: Bool = true
+    private var storedAddedRequests: [UNNotificationRequest] = []
+    private var storedRemovedIdentifiersBatches: [[String]] = []
+    private var storedPendingIdentifiers: [String] = []
+    private var storedRequestAuthCount: Int = 0
+    private var storedAddError: Error?
+
+    // MARK: Test setters / getters
 
     func setAuthorizationStatus(_ value: UNAuthorizationStatus) {
-        status = value
+        lock.withLock { storedStatus = value }
     }
     func setAuthorizationGrant(_ value: Bool) {
-        grant = value
+        lock.withLock { storedGrant = value }
     }
     func setPendingIdentifiers(_ ids: [String]) {
-        pendingIdentifiersValue = ids
+        lock.withLock { storedPendingIdentifiers = ids }
     }
     func setAddError(_ error: Error) {
-        addError = error
+        lock.withLock { storedAddError = error }
+    }
+
+    var addedRequests: [UNNotificationRequest] {
+        lock.withLock { storedAddedRequests }
+    }
+    var removedIdentifiersBatches: [[String]] {
+        lock.withLock { storedRemovedIdentifiersBatches }
+    }
+    var requestAuthorizationCallCount: Int {
+        lock.withLock { storedRequestAuthCount }
     }
 
     // MARK: NotificationCenterServicing
 
     func authorizationStatus() async -> UNAuthorizationStatus {
-        status
+        lock.withLock { storedStatus }
     }
 
-    func add(_ request: sending UNNotificationRequest) async throws {
-        if let addError {
-            throw addError
+    func add(_ request: UNNotificationRequest) async throws {
+        try lock.withLock {
+            if let storedAddError {
+                throw storedAddError
+            }
+            storedAddedRequests.append(request)
         }
-        addedRequests.append(request)
     }
 
     func removePendingNotificationRequests(withIdentifiers identifiers: [String]) async {
-        removedIdentifiersBatches.append(identifiers)
-        pendingIdentifiersValue.removeAll { identifiers.contains($0) }
+        lock.withLock {
+            storedRemovedIdentifiersBatches.append(identifiers)
+            storedPendingIdentifiers.removeAll { identifiers.contains($0) }
+        }
     }
 
     func pendingNotificationIdentifiers() async -> [String] {
-        pendingIdentifiersValue
+        lock.withLock { storedPendingIdentifiers }
     }
 
     func requestAuthorization() async throws -> Bool {
-        requestAuthorizationCallCount += 1
-        return grant
+        lock.withLock {
+            storedRequestAuthCount += 1
+            return storedGrant
+        }
     }
 }
