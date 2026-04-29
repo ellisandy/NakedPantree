@@ -72,11 +72,14 @@ final class AccountStatusMonitor {
         }
     }
 
-    /// `internal` (not `private`) so `AccountStatusMonitorMappingTests`
-    /// can pin every `CKAccountStatus → AccountStatus` case directly
-    /// (issue #112). Pure function with no dependencies; opening it
-    /// up costs nothing at the type's usage surface.
-    static func map(_ raw: CKAccountStatus) -> AccountStatus {
+    /// `nonisolated internal` (not `private`) so
+    /// `AccountStatusMonitorMappingTests` can pin every
+    /// `CKAccountStatus → AccountStatus` case directly (issue #112).
+    /// Pure function with no actor-dependent state; the enclosing
+    /// class is `@MainActor` only because of the published `status`
+    /// property and the `task` lifecycle. The mapping itself doesn't
+    /// touch either.
+    nonisolated static func map(_ raw: CKAccountStatus) -> AccountStatus {
         switch raw {
         case .available: .available
         case .noAccount: .noAccount
