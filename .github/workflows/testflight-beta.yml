@@ -243,6 +243,14 @@ jobs:
             -exportOptionsPlist build/exportOptions.plist \
             OTHER_CODE_SIGN_FLAGS="--keychain=$KEYCHAIN_PATH"
 
+      # `xcrun altool` exits 0 on Apple-side rejection (e.g. duplicate
+      # bundle version) — it logs `ERROR:` to stdout but the shell
+      # sees green. Two TestFlight uploads silently no-op'd this way
+      # before this guard was added. We tee output to a file and
+      # explicitly fail the step if any line begins with `ERROR:`.
+      # `set -o pipefail` would propagate altool's exit code through
+      # tee, but altool's exit 0 makes that insufficient — the grep
+      # is the actual gate.
       - name: Upload to TestFlight
         env:
           API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
@@ -251,11 +259,18 @@ jobs:
           set -euo pipefail
           IPA=$(find build/export -name '*.ipa' | head -n1)
           [ -n "$IPA" ] || { echo "No .ipa produced"; exit 1; }
+          ALTOOL_LOG=$(mktemp)
           xcrun altool --upload-app \
             --type ios \
             --file "$IPA" \
             --apiKey "$API_KEY_ID" \
-            --apiIssuer "$API_ISSUER_ID"
+            --apiIssuer "$API_ISSUER_ID" 2>&1 | tee "$ALTOOL_LOG"
+          if grep -q '^[[:space:]]*[0-9-]\+\s\+[0-9:.]\+\s\+ERROR:' "$ALTOOL_LOG" \
+             || grep -q 'Failed to upload' "$ALTOOL_LOG"; then
+            echo "::error::altool reported an upload failure — Apple did NOT accept the build."
+            echo "::error::Check the log above for details (common causes: duplicate cfBundleVersion, missing entitlements, expired profile)."
+            exit 1
+          fi
 
       - name: Upload archive on failure
         if: failure()

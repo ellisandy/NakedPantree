@@ -18,8 +18,18 @@
     <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
     <key>CFBundleShortVersionString</key>
     <string>0.1.0</string>
+    <!-- Build number flows from `CURRENT_PROJECT_VERSION` so CI can
+         override per-run (`GITHUB_RUN_NUMBER` in
+         `.github/workflows/testflight-beta.yml`). Hardcoding a literal
+         here is what caused two silent TestFlight rejections in
+         issue #92's wake — every upload landed as build "1", which
+         was lower than the build "10" already on file. Local builds
+         get `CURRENT_PROJECT_VERSION = 1` from Xcode defaults; CI
+         gets the run number. Marketing version
+         (`CFBundleShortVersionString`) above stays a literal; bump it
+         by hand on milestone changes. -->
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
     <!--
         Standard export-compliance exemption: Naked Pantree uses only
         Apple-provided system encryption (HTTPS via URLSession,
