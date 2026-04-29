@@ -2,8 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!--
+        Production push environment. The "Github Publish" provisioning
+        profile authorizes `production` (verified via `security cms -D
+        -i Github_Publish.mobileprovision | plutil -extract Entitlements`),
+        and TestFlight / App Store distribution requires it for APNs
+        delivery to work — `development` would route to the dev APNs
+        server which won't deliver to a production-signed binary.
+        Apple's auto-provisioning was silently fixing this when we
+        used `-allowProvisioningUpdates` (issue #92); manual signing
+        surfaced the latent mismatch. The Debug entitlements file
+        (`NakedPantreeDev.entitlements`) keeps `development` because
+        Xcode-Run debug builds use the dev APNs server.
+    -->
     <key>aps-environment</key>
-    <string>development</string>
+    <string>production</string>
     <key>com.apple.developer.icloud-container-identifiers</key>
     <array>
         <string>iCloud.cc.mnmlst.nakedpantree</string>
