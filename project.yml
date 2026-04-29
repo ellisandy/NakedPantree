@@ -44,41 +44,40 @@ targets:
     settings:
       base:
         PRODUCT_MODULE_NAME: NakedPantree
+        PRODUCT_NAME: "Naked Pantree"
+        PRODUCT_BUNDLE_IDENTIFIER: cc.mnmlst.nakedpantree
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: YES
-        CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: NakedPantreeApp/Resources/Info.plist
-      configs:
-        # Debug ships a separate bundle id + iCloud container so a
-        # local dev build can sit alongside the TestFlight build on
-        # the same device. See DEVELOPMENT.md §3 for the user-side
-        # Apple Developer portal setup that has to be done in
-        # parallel for the dev signing flow to actually succeed.
-        Debug:
-          PRODUCT_BUNDLE_IDENTIFIER: cc.mnmlst.nakedpantree.dev
-          PRODUCT_NAME: "Pantree Dev"
-          CODE_SIGN_ENTITLEMENTS: NakedPantreeApp/Resources/NakedPantreeDev.entitlements
-        Release:
-          PRODUCT_BUNDLE_IDENTIFIER: cc.mnmlst.nakedpantree
-          PRODUCT_NAME: "Naked Pantree"
-          CODE_SIGN_ENTITLEMENTS: NakedPantreeApp/Resources/NakedPantree.entitlements
-          # Manual signing for Release (issue #92). These have to live
-          # on the main app target — passing them on the xcodebuild
-          # cmdline cascades to SwiftPM-generated resource bundles
-          # (e.g. Core_NakedPantreePersistence) which reject profile
-          # specifiers. CI imports the matching cert + profile via
-          # `.github/workflows/testflight-beta.yml`; local archives
-          # need the same "Github Publish" profile installed via
-          # `open ~/Downloads/Github_Publish.mobileprovision` and the
-          # "Apple Distribution: Andrew Ellis" cert in the login
-          # keychain. Debug stays Automatic — see `base` above.
-          CODE_SIGN_STYLE: Manual
-          CODE_SIGN_IDENTITY: "Apple Distribution"
-          PROVISIONING_PROFILE_SPECIFIER: "Github Publish"
+        CODE_SIGN_ENTITLEMENTS: NakedPantreeApp/Resources/NakedPantree.entitlements
+        # Manual signing for both configs (issue #92). The original
+        # plan had Debug on Automatic with a separate `*.dev` bundle
+        # id and dev iCloud container so local builds wouldn't touch
+        # TestFlight data. In practice, for a solo project at v1.0
+        # that's overkill — it doubled the entitlements/profile/
+        # container surface area without paying off in isolation
+        # value. Collapsed in this commit (apps#101): single bundle
+        # id, single entitlements file, single iCloud container,
+        # manual signing in both configs.
+        #
+        # Local dev needs the "Github Publish" profile installed via
+        # `open ~/Downloads/Github_Publish.mobileprovision` and the
+        # "Apple Distribution: Andrew Ellis" cert in the login
+        # keychain — same setup CI uses (replicated in
+        # `.github/workflows/testflight-beta.yml` and `build-test.yml`).
+        #
+        # Why on the target's `base` (not on the cmdline): cmdline
+        # build settings cascade to SwiftPM-generated resource
+        # bundles (`Core_NakedPantreePersistence`) which reject
+        # profile specifiers — pinning to the target keeps signing
+        # scoped correctly.
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Apple Distribution"
+        PROVISIONING_PROFILE_SPECIFIER: "Github Publish"
 
   NakedPantreeTests:
     type: bundle.unit-test
@@ -94,15 +93,15 @@ targets:
     settings:
       base:
         BUNDLE_LOADER: "$(TEST_HOST)"
-      # TEST_HOST tracks the host app's per-config PRODUCT_NAME — the
-      # Debug build produces "Pantree Dev.app" while Release stays
-      # "Naked Pantree.app". Hardcoding either filename here would
-      # break the other config at test-link time.
-      configs:
-        Debug:
-          TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Pantree Dev.app/Pantree Dev"
-        Release:
-          TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Naked Pantree.app/Naked Pantree"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Naked Pantree.app/Naked Pantree"
+        # Test bundles get an auto-generated Info.plist. Required
+        # since apps#101 turned on signing in CI — without an Info.plist
+        # codesign refuses to sign the test bundle. Auto-gen is the
+        # standard pattern for test targets (Xcode default for new
+        # ones); we just have to opt in explicitly here because the
+        # main app target sets `GENERATE_INFOPLIST_FILE: NO` and the
+        # test targets pick up nothing from it.
+        GENERATE_INFOPLIST_FILE: YES
 
   NakedPantreeUITests:
     type: bundle.ui-testing
@@ -114,6 +113,8 @@ targets:
     settings:
       base:
         TEST_TARGET_NAME: NakedPantree
+        # Same auto-gen Info.plist as `NakedPantreeTests` — see above.
+        GENERATE_INFOPLIST_FILE: YES
 
 schemes:
   NakedPantree:

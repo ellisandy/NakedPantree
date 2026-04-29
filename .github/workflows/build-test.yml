@@ -48,11 +48,83 @@ jobs:
         run: brew install xcodegen
       - name: Generate project
         run: xcodegen generate
+
+      # Mirror of the keychain setup in `testflight-beta.yml`. The
+      # build-test workflow used to pass `CODE_SIGNING_ALLOWED=NO`,
+      # which avoided needing a cert/profile but stripped entitlements
+      # from the simulator binary. Once unit tests started constructing
+      # `CKContainer` / `NSPersistentCloudKitContainer` for #90 coverage,
+      # those CK-touching tests hung waiting for an entitlement that was
+      # never embedded. Signing the binary with the existing
+      # "Github Publish" profile gives tests real entitlements, which
+      # lets CK initialize without hanging and exercises the actual app
+      # code paths.
+      #
+      # We do *not* sign in to iCloud — that's a separate, much larger
+      # lift (CI iCloud account, 2FA, security). Tests that round-trip
+      # to Apple's servers (real `share(_:to:)`, fetch, push) still
+      # cannot run in CI; that's intentional and unchanged. What signing
+      # buys us is the CKContainer-construction layer, which is enough
+      # to exercise our service / view-model code without hangs.
+      - name: Set up signing keychain
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/nakedpantree-test-$GITHUB_RUN_ID.keychain-db"
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          CERT_PATH="$RUNNER_TEMP/build_certificate.p12"
+          PROFILE_PATH="$RUNNER_TEMP/AppStore.mobileprovision"
+
+          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 -d > "$CERT_PATH"
+          printf '%s' "$PROVISIONING_PROFILE_BASE64" | base64 -d > "$PROFILE_PATH"
+
+          CERT_SIZE=$(wc -c < "$CERT_PATH" | tr -d ' ')
+          PROFILE_SIZE=$(wc -c < "$PROFILE_PATH" | tr -d ' ')
+          echo "▸ p12: $CERT_SIZE bytes, profile: $PROFILE_SIZE bytes"
+          [ "$CERT_SIZE" -gt 1000 ] || { echo "::error::p12 too small — re-check BUILD_CERTIFICATE_BASE64"; exit 1; }
+          [ "$PROFILE_SIZE" -gt 1000 ] || { echo "::error::profile too small — re-check PROVISIONING_PROFILE_BASE64"; exit 1; }
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security import "$CERT_PATH" \
+            -P "$P12_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          PROFILE_UUID=$(security cms -D -i "$PROFILE_PATH" | plutil -extract UUID raw -)
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          echo "▸ Installed profile UUID: $PROFILE_UUID"
+
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      # Build + test in **Debug** config (the standard Xcode test
+      # config — `@testable import` works, debug symbols are useful,
+      # optimization is off for faster iteration). Manual signing
+      # now lives on `base` in `project.yml` (apps#101 collapsed the
+      # Debug/Release split), so Debug builds use the same
+      # "Github Publish" cert + profile as Release/TestFlight does.
+      #
+      # `OTHER_CODE_SIGN_FLAGS=--keychain=...` keeps codesign on the
+      # temp keychain rather than searching login.keychain.
+      #
+      # `SnapshotsUITests` is captured separately by the screenshots
+      # workflow on demand — keep PR runs fast.
       - name: Build & test
         run: |
           set -o pipefail
-          # `SnapshotsUITests` is captured separately by the
-          # screenshots workflow on demand — keep PR runs fast.
           xcodebuild test \
             -project NakedPantree.xcodeproj \
             -scheme NakedPantree \
@@ -61,7 +133,8 @@ jobs:
             -resultBundlePath TestResults.xcresult \
             -skipPackagePluginValidation \
             -skip-testing:NakedPantreeUITests/SnapshotsUITests \
-            CODE_SIGNING_ALLOWED=NO
+            OTHER_CODE_SIGN_FLAGS="--keychain=$KEYCHAIN_PATH"
+
       - name: Upload xcresult on failure
         if: failure()
         uses: actions/upload-artifact@v7
@@ -69,3 +142,12 @@ jobs:
           name: TestResults.xcresult
           path: TestResults.xcresult
           if-no-files-found: ignore
+
+      # Always tear down the temp keychain. Same belt-and-braces
+      # rationale as the testflight workflow's cleanup step.
+      - name: Clean up signing keychain
+        if: always()
+        run: |
+          if [ -n "${KEYCHAIN_PATH:-}" ] && [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
