@@ -49,6 +49,8 @@
     <true/>
     <key>NSCameraUsageDescription</key>
     <string>Take photos of items in your pantry so you can spot them at a glance.</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>So Naked Pantree can drop your restock list into Reminders when you ask.</string>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>
