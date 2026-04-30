@@ -65,6 +65,11 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
     }
 
     public func create(_ item: Item) async throws {
+        // Issue #153: auto-flag the item if its initial quantity is at
+        // or below its threshold. Pure mutation on the value type
+        // before we hit the context — keeps the rule out of the
+        // setter ceremony below.
+        let item = Self.applyAutoFlagWhenLow(item)
         try await container.performBackgroundTaskWithDefaults { [container] context in
             let row = NSEntityDescription.insertNewObject(
                 forEntityName: "ItemEntity",
@@ -82,6 +87,8 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
     }
 
     public func update(_ item: Item) async throws {
+        // Issue #153: same auto-flag-when-low rule as `create`.
+        let item = Self.applyAutoFlagWhenLow(item)
         try await container.performBackgroundTaskWithDefaults { [container] context in
             let row: NSManagedObject
             let isNew: Bool
@@ -120,6 +127,17 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
             guard let row = try Self.fetchItemRow(id: id, in: context) else { return }
             row.setValue(quantity, forKey: "quantity")
             row.setValue(Date(), forKey: "updatedAt")
+            // Issue #153: even on the partial path, evaluate the
+            // auto-flag rule against the just-written quantity. Read
+            // `restockThreshold` and the current `needsRestocking` off
+            // the row (no `Item` round-trip — that would defeat the
+            // race-prevention shape). Only flip false → true; never
+            // auto-clear.
+            let threshold = row.value(forKey: "restockThreshold") as? Int32
+            let alreadyFlagged = row.value(forKey: "needsRestocking") as? Bool ?? false
+            if let threshold, quantity <= threshold, !alreadyFlagged {
+                row.setValue(true, forKey: "needsRestocking")
+            }
             try context.save()
         }
     }
@@ -177,8 +195,31 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
         row.setValue(item.expiresAt, forKey: "expiresAt")
         row.setValue(item.notes, forKey: "notes")
         row.setValue(item.needsRestocking, forKey: "needsRestocking")
+        // Issue #153: writes nil cleanly via NSNumber-or-nil. The
+        // attribute is optional in the model so storing nil clears
+        // the threshold (the "Off" / "None" UI affordance).
+        row.setValue(item.restockThreshold, forKey: "restockThreshold")
         row.setValue(item.createdAt, forKey: "createdAt")
         row.setValue(stampUpdatedAt ? Date() : item.updatedAt, forKey: "updatedAt")
+    }
+
+    /// Issue #153: shared auto-flag-when-low evaluation. Pure
+    /// function so the rule is identical across `create` and
+    /// `update`. Returns the item unchanged when no threshold is
+    /// set, when quantity is above threshold, or when the flag is
+    /// already true. `updateQuantity` runs an equivalent check
+    /// directly against the row to avoid an `Item` round-trip.
+    private static func applyAutoFlagWhenLow(_ item: Item) -> Item {
+        guard
+            let threshold = item.restockThreshold,
+            item.quantity <= threshold,
+            !item.needsRestocking
+        else {
+            return item
+        }
+        var flagged = item
+        flagged.needsRestocking = true
+        return flagged
     }
 
     /// Mirrors `CoreDataLocationRepository.attachHousehold` — if the
@@ -243,6 +284,11 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
             // the column existed (CloudKit additive migration — the
             // attribute is optional with `defaultValueString="NO"`).
             needsRestocking: row.value(forKey: "needsRestocking") as? Bool ?? false,
+            // Issue #153: optional Int32 — `nil` is the "no threshold"
+            // sentinel. Pre-#153 rows have a nil column value, so the
+            // cast naturally surfaces `nil` and the auto-flag rule
+            // skips them.
+            restockThreshold: row.value(forKey: "restockThreshold") as? Int32,
             createdAt: row.value(forKey: "createdAt") as? Date ?? Date(),
             updatedAt: row.value(forKey: "updatedAt") as? Date ?? Date()
         )

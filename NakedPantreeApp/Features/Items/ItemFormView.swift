@@ -39,6 +39,15 @@ struct ItemFormView: View {
     /// (load not yet completed, or single-location household) hides
     /// the picker — there's nowhere to move the item to.
     @State private var locations: [Location] = []
+    /// Issue #153: master toggle for the per-item restock threshold.
+    /// `false` means "no auto-flag," equivalent to `restockThreshold == nil`.
+    /// Splitting the toggle from the value keeps the UX simple — when the
+    /// user flips the threshold off, we don't lose their last value.
+    @State private var hasRestockThreshold: Bool = false
+    /// Issue #153: the auto-flag-when-low value. Persisted as
+    /// `Item.restockThreshold` only when `hasRestockThreshold == true`.
+    /// Default seed of 1 — the most common reorder-on-last-one case.
+    @State private var restockThreshold: Int32 = 1
 
     private let unitOptions: [NakedPantreeDomain.Unit] = [
         .count, .gram, .kilogram, .ounce, .pound,
@@ -62,6 +71,35 @@ struct ItemFormView: View {
                         ForEach(unitOptions, id: \.self) { option in
                             Text(option.pickerLabel).tag(option)
                         }
+                    }
+                }
+
+                // Issue #153: per-item restock threshold. Toggle drives
+                // the `nil` vs Int32 split — when off, the persisted
+                // `Item.restockThreshold` is nil and the auto-flag rule
+                // doesn't run. Threshold `0` is a valid value (flips at
+                // zero, matching the existing out-of-stock signal but
+                // explicit per-item).
+                Section {
+                    Toggle("Remind me when low", isOn: $hasRestockThreshold)
+                        .accessibilityIdentifier("itemForm.restockThreshold.toggle")
+                    if hasRestockThreshold {
+                        Stepper(value: $restockThreshold, in: 0...9999) {
+                            Text("Flag when quantity reaches \(restockThreshold)")
+                        }
+                        .accessibilityIdentifier("itemForm.restockThreshold.stepper")
+                    }
+                } header: {
+                    Text("Restock alert")
+                } footer: {
+                    if hasRestockThreshold {
+                        // Once-and-for-all explanation of the one-way
+                        // semantic. Voice rule §10 — short, useful, no
+                        // surprise behaviour for the user.
+                        Text(
+                            "We'll flag this item for restocking automatically. "
+                                + "Clear the flag yourself when you've shopped — it never auto-clears."
+                        )
                     }
                 }
 
@@ -180,6 +218,13 @@ struct ItemFormView: View {
                 expiresAt = expiry
             }
             notes = item.notes ?? ""
+            // Issue #153: prefill the threshold UI from the existing
+            // item. `nil` → toggle off, last-edited value re-seeded
+            // to 1 (the default for first-time toggle-on).
+            if let threshold = item.restockThreshold {
+                hasRestockThreshold = true
+                restockThreshold = threshold
+            }
         }
     }
 
@@ -211,6 +256,10 @@ struct ItemFormView: View {
         // canonical id (create's seed, or the item's current location
         // on edit).
         let resolvedLocationID = selectedLocationID ?? defaultLocationID()
+        // Issue #153: collapse the toggle + stepper into the optional
+        // domain field. Toggle off → nil; toggle on → the picker's
+        // current value (including 0).
+        let resolvedThreshold: Int32? = hasRestockThreshold ? restockThreshold : nil
         let draft = ItemFormDraft(
             locationID: resolvedLocationID,
             name: name,
@@ -218,7 +267,8 @@ struct ItemFormView: View {
             unit: unit,
             hasExpiry: hasExpiry,
             expiresAt: expiresAt,
-            notes: notes
+            notes: notes,
+            restockThreshold: resolvedThreshold
         )
         isSaving = true
         defer { isSaving = false }
