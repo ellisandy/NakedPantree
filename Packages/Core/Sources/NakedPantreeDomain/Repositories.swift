@@ -32,12 +32,61 @@ public protocol HouseholdRepository: Sendable {
 }
 
 /// CRUD over `Location`s scoped to a single household.
+///
+/// **Uniqueness contract (issue #133).** A `Location`'s name must be
+/// unique within its household. Comparison is whitespace-trimmed and
+/// case-insensitive — `"Kitchen Pantry"`, `"  KITCHEN PANTRY  "`, and
+/// `"kitchen pantry"` are all duplicates. The stored value preserves
+/// the caller's exact casing/spacing — only the *comparison* is
+/// normalized via `normalizedLocationName(_:)`.
+///
+/// Implementations must:
+/// - Throw `LocationRepositoryError.duplicateName(name:)` from
+///   `create(_:)` if any other location in the same household has
+///   the same normalized name.
+/// - Throw the same error from `update(_:)` if the new name collides
+///   with **another** location's name. Updating a location to its own
+///   current name (i.e. the row whose `id` matches the input) is not
+///   a duplicate and must succeed — that's how kind/sortOrder edits
+///   work.
+/// - Allow the same name across different households. The check is
+///   per-`householdID`, not global.
+///
+/// **Migration:** pre-existing duplicates already in the wild are not
+/// auto-corrected. The check only blocks new collisions; bulk-merge
+/// migration is out of scope for #133.
 public protocol LocationRepository: Sendable {
     func locations(in householdID: Household.ID) async throws -> [Location]
     func location(id: Location.ID) async throws -> Location?
+    /// Throws `LocationRepositoryError.duplicateName` if another
+    /// location in the same household already uses this name (after
+    /// `normalizedLocationName(_:)` normalization).
     func create(_ location: Location) async throws
+    /// Throws `LocationRepositoryError.duplicateName` if the new name
+    /// collides with another location in the same household. Renaming
+    /// to the row's own current name is allowed.
     func update(_ location: Location) async throws
     func delete(id: Location.ID) async throws
+}
+
+/// Errors specific to `LocationRepository` operations. Issue #133.
+public enum LocationRepositoryError: Error, Equatable {
+    /// `create` or `update` would have produced two locations in the
+    /// same household with the same normalized name. Carries the
+    /// offending caller-supplied name verbatim — the form layer
+    /// surfaces it in the inline error.
+    case duplicateName(name: String)
+}
+
+/// Whitespace-trimmed, lowercased form of a location name. Used as the
+/// uniqueness key — the stored display value is whatever the user
+/// typed. Issue #133.
+///
+/// Pure free function so both repositories and `LocationFormView`'s
+/// live-validation can call it without crossing actor boundaries or
+/// pulling in extra types.
+public func normalizedLocationName(_ name: String) -> String {
+    name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 }
 
 /// CRUD over `Item`s plus household-scoped search.

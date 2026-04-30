@@ -31,6 +31,17 @@ public final class CoreDataLocationRepository: LocationRepository, @unchecked Se
 
     public func create(_ location: Location) async throws {
         try await container.performBackgroundTaskWithDefaults { [container] context in
+            // Issue #133: per-household name uniqueness. Pre-flight
+            // the normalized-name comparison before insertion so we
+            // don't have to roll back a half-saved context. `nil`
+            // for `excluding` — there's no existing row to skip on
+            // create.
+            try Self.requireUniqueName(
+                location.name,
+                in: location.householdID,
+                excluding: nil,
+                context: context
+            )
             let row = NSEntityDescription.insertNewObject(
                 forEntityName: "LocationEntity",
                 into: context
@@ -55,6 +66,16 @@ public final class CoreDataLocationRepository: LocationRepository, @unchecked Se
 
     public func update(_ location: Location) async throws {
         try await container.performBackgroundTaskWithDefaults { [container] context in
+            // Issue #133: same per-household uniqueness check, but
+            // `excluding: location.id` so renaming the row to its own
+            // current name (or just changing kind/sortOrder) doesn't
+            // collide with itself.
+            try Self.requireUniqueName(
+                location.name,
+                in: location.householdID,
+                excluding: location.id,
+                context: context
+            )
             // Existing rows already live in a store — Core Data saves
             // them there. Only the lazy-insert branch needs routing.
             let row: NSManagedObject
@@ -85,6 +106,39 @@ public final class CoreDataLocationRepository: LocationRepository, @unchecked Se
                 )
             }
             try context.save()
+        }
+    }
+
+    /// Fetches all locations for the given household, then walks the
+    /// in-memory list applying the normalized comparison. The Core
+    /// Data layer doesn't have a direct case-insensitive +
+    /// whitespace-trimmed predicate that's portable across SQL stores,
+    /// so post-fetch filtering keeps the rule consistent with
+    /// `InMemoryLocationRepository`. The fetch is bounded to the same
+    /// household (typical pantry has a handful of locations), so the
+    /// cost is negligible.
+    ///
+    /// Pre-existing duplicates that landed in the store before #133
+    /// went out aren't auto-corrected — this check only blocks new
+    /// collisions, which matches the migration policy declared in the
+    /// `LocationRepository` doc.
+    private static func requireUniqueName(
+        _ name: String,
+        in householdID: Household.ID,
+        excluding selfID: Location.ID?,
+        context: NSManagedObjectContext
+    ) throws {
+        let target = normalizedLocationName(name)
+        let request = NSFetchRequest<NSManagedObject>(entityName: "LocationEntity")
+        request.predicate = NSPredicate(format: "household.id == %@", householdID as CVarArg)
+        let rows = try context.fetch(request)
+        for row in rows {
+            let rowID = row.value(forKey: "id") as? UUID
+            if rowID == selfID { continue }
+            let rowName = row.value(forKey: "name") as? String ?? ""
+            if normalizedLocationName(rowName) == target {
+                throw LocationRepositoryError.duplicateName(name: name)
+            }
         }
     }
 

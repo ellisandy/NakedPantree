@@ -251,6 +251,124 @@ struct LocationRepositoryContractTests {
         let unknown = try await locationRepo.location(id: UUID())
         #expect(unknown == nil)
     }
+
+    // MARK: - Issue #133 — per-household name uniqueness
+
+    @Test(
+        "create with an exact-duplicate name throws duplicateName",
+        arguments: RepositoryFactory.all)
+    func createDuplicateExactThrows(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let house = try await household.currentHousehold()
+        try await locationRepo.create(Location(householdID: house.id, name: "Kitchen Pantry"))
+
+        await #expect(throws: LocationRepositoryError.duplicateName(name: "Kitchen Pantry")) {
+            try await locationRepo.create(
+                Location(householdID: house.id, name: "Kitchen Pantry")
+            )
+        }
+    }
+
+    @Test(
+        "create with a case-different duplicate name throws duplicateName",
+        arguments: RepositoryFactory.all)
+    func createDuplicateCaseInsensitiveThrows(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let house = try await household.currentHousehold()
+        try await locationRepo.create(Location(householdID: house.id, name: "Kitchen Pantry"))
+
+        await #expect(throws: LocationRepositoryError.self) {
+            try await locationRepo.create(
+                Location(householdID: house.id, name: "kitchen pantry")
+            )
+        }
+    }
+
+    @Test(
+        "create with whitespace-padded duplicate name throws duplicateName",
+        arguments: RepositoryFactory.all)
+    func createDuplicateWhitespaceThrows(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let house = try await household.currentHousehold()
+        try await locationRepo.create(Location(householdID: house.id, name: "Kitchen Pantry"))
+
+        await #expect(throws: LocationRepositoryError.self) {
+            try await locationRepo.create(
+                Location(householdID: house.id, name: "  KITCHEN PANTRY  ")
+            )
+        }
+    }
+
+    @Test(
+        "update renaming into another location's name throws duplicateName",
+        arguments: RepositoryFactory.all)
+    func updateRenameIntoDuplicateThrows(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let house = try await household.currentHousehold()
+        let kitchen = Location(householdID: house.id, name: "Kitchen")
+        let pantry = Location(householdID: house.id, name: "Pantry")
+        try await locationRepo.create(kitchen)
+        try await locationRepo.create(pantry)
+
+        var renamed = pantry
+        renamed.name = "kitchen"
+        await #expect(throws: LocationRepositoryError.self) {
+            try await locationRepo.update(renamed)
+        }
+    }
+
+    @Test(
+        "update keeping the row's own current name succeeds (no false self-collision)",
+        arguments: RepositoryFactory.all)
+    func updateKeepingOwnNameSucceeds(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let house = try await household.currentHousehold()
+        let kitchen = Location(householdID: house.id, name: "Kitchen", kind: .pantry)
+        try await locationRepo.create(kitchen)
+
+        // Rename the row to its own current name (case-insensitive
+        // match against itself); kind change is the "real" edit. The
+        // repository must not flag this as a duplicate.
+        var updated = kitchen
+        updated.name = "  KITCHEN  "
+        updated.kind = .fridge
+        try await locationRepo.update(updated)
+
+        let reloaded = try #require(try await locationRepo.location(id: kitchen.id))
+        #expect(reloaded.kind == .fridge)
+    }
+
+    @Test(
+        "two different households can each have a same-named location",
+        arguments: RepositoryFactory.all)
+    func differentHouseholdsAllowSameName(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let locationRepo = bundle.location
+        let firstHousehold = UUID()
+        let secondHousehold = UUID()
+        try await locationRepo.create(
+            Location(householdID: firstHousehold, name: "Kitchen Pantry")
+        )
+        // Same name, different household — no collision.
+        try await locationRepo.create(
+            Location(householdID: secondHousehold, name: "Kitchen Pantry")
+        )
+
+        let firstLocations = try await locationRepo.locations(in: firstHousehold)
+        let secondLocations = try await locationRepo.locations(in: secondHousehold)
+        #expect(firstLocations.count == 1)
+        #expect(secondLocations.count == 1)
+    }
 }
 
 @Suite("ItemRepository contract")
