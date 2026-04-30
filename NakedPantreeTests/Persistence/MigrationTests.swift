@@ -81,6 +81,16 @@ struct MigrationTests {
             (item.value(forKey: "needsRestocking") as? Bool) == false,
             "Migration didn't apply the additive-Boolean default."
         )
+        // Issue #153: `restockThreshold` is the second additive
+        // attribute layered on top of `needsRestocking`. Optional
+        // Integer 32 with no default → nil for pre-#153 rows. Pinning
+        // it here keeps the migration test honest about both
+        // additive-attribute migrations the user data has gone
+        // through.
+        #expect(
+            (item.value(forKey: "restockThreshold") as? Int32) == nil,
+            "Migration didn't leave restockThreshold nil for pre-#153 rows."
+        )
 
         // Relationship intact — the item still resolves to the seeded
         // location, and the location still resolves to the seeded

@@ -909,6 +909,194 @@ struct ItemRepositoryNeedsRestockingContractTests {
     }
 }
 
+/// Issue #153: pins the auto-flag-when-low contract that
+/// `ItemRepository` implementations must honour. Same parameterized
+/// shape as the other contract suites — every implementation runs
+/// every test. Lives in its own suite (separate from
+/// `ItemRepositoryNeedsRestockingContractTests`) so the auto-flag
+/// rule has a clear, discoverable home and the existing #16 tests
+/// stay focused on the manual-flag / out-of-stock semantics.
+@Suite("ItemRepository auto-flag-when-low contract (#153)")
+struct ItemRepositoryAutoFlagWhenLowContractTests {
+    @Test(
+        "create with quantity at threshold flips needsRestocking on insert",
+        arguments: RepositoryFactory.all)
+    func createAtThresholdFlips(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let kitchen = try await Self.makeKitchen(bundle)
+        let milk = Item(
+            locationID: kitchen.id,
+            name: "Milk",
+            quantity: 2,
+            restockThreshold: 2
+        )
+        try await bundle.item.create(milk)
+        let fetched = try #require(try await bundle.item.item(id: milk.id))
+        #expect(fetched.needsRestocking == true)
+        #expect(fetched.restockThreshold == 2)
+    }
+
+    @Test(
+        "create with quantity above threshold does not flip",
+        arguments: RepositoryFactory.all)
+    func createAboveThresholdNoFlip(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let kitchen = try await Self.makeKitchen(bundle)
+        let milk = Item(
+            locationID: kitchen.id,
+            name: "Milk",
+            quantity: 5,
+            restockThreshold: 2
+        )
+        try await bundle.item.create(milk)
+        let fetched = try #require(try await bundle.item.item(id: milk.id))
+        #expect(fetched.needsRestocking == false)
+    }
+
+    @Test(
+        "update that drops quantity to threshold flips false → true",
+        arguments: RepositoryFactory.all)
+    func updateCrossingThresholdFlips(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let kitchen = try await Self.makeKitchen(bundle)
+        var milk = Item(
+            locationID: kitchen.id,
+            name: "Milk",
+            quantity: 5,
+            restockThreshold: 2
+        )
+        try await bundle.item.create(milk)
+
+        milk.quantity = 1
+        try await bundle.item.update(milk)
+        let fetched = try #require(try await bundle.item.item(id: milk.id))
+        #expect(fetched.needsRestocking == true, "Auto-flag rule must fire on quantity drop.")
+    }
+
+    @Test(
+        "updateQuantity partial path also fires the auto-flag rule",
+        arguments: RepositoryFactory.all)
+    func updateQuantityPartialFlips(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let kitchen = try await Self.makeKitchen(bundle)
+        let milk = Item(
+            locationID: kitchen.id,
+            name: "Milk",
+            quantity: 5,
+            restockThreshold: 2
+        )
+        try await bundle.item.create(milk)
+
+        // Partial update — the stepper-driven path. Threshold-crossing
+        // here must also flip the flag, matching the full-update
+        // path. Pre-#153 this was the silent gap.
+        try await bundle.item.updateQuantity(id: milk.id, quantity: 0)
+        let fetched = try #require(try await bundle.item.item(id: milk.id))
+        #expect(fetched.needsRestocking == true)
+        #expect(fetched.quantity == 0, "Quantity must still be partial-updated.")
+    }
+
+    @Test(
+        "update never auto-clears: quantity rising above threshold leaves flag set",
+        arguments: RepositoryFactory.all)
+    func updateAboveThresholdDoesNotClear(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let kitchen = try await Self.makeKitchen(bundle)
+        var milk = Item(
+            locationID: kitchen.id,
+            name: "Milk",
+            quantity: 1,
+            needsRestocking: true,
+            restockThreshold: 2
+        )
+        try await bundle.item.create(milk)
+
+        // User restocked above threshold but didn't manually clear
+        // the flag. The flag must stay set — that's the spec's "no
+        // auto-clear" rule. Clearing is the user's job via the
+        // existing detail toggle / swipe action.
+        milk.quantity = 10
+        try await bundle.item.update(milk)
+        let fetched = try #require(try await bundle.item.item(id: milk.id))
+        #expect(fetched.needsRestocking == true, "Flag must persist when quantity rises.")
+    }
+
+    @Test(
+        "nil threshold opts out of the auto-flag rule entirely",
+        arguments: RepositoryFactory.all)
+    func nilThresholdOptsOut(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let kitchen = try await Self.makeKitchen(bundle)
+        let bread = Item(
+            locationID: kitchen.id,
+            name: "Bread",
+            quantity: 0,  // Out of stock — would surface via the #16
+            // `quantity == 0` rule but should NOT cause auto-flag
+            // (because that's the manual-flag list path; auto-flag
+            // is gated on a non-nil threshold).
+            restockThreshold: nil
+        )
+        try await bundle.item.create(bread)
+        let fetched = try #require(try await bundle.item.item(id: bread.id))
+        #expect(fetched.needsRestocking == false, "Nil threshold must not auto-flag.")
+    }
+
+    @Test(
+        "threshold of 0 is valid and flips at quantity 0",
+        arguments: RepositoryFactory.all)
+    func zeroThresholdFlipsAtZero(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let kitchen = try await Self.makeKitchen(bundle)
+        let item = Item(
+            locationID: kitchen.id,
+            name: "Salt",
+            quantity: 0,
+            restockThreshold: 0
+        )
+        try await bundle.item.create(item)
+        let fetched = try #require(try await bundle.item.item(id: item.id))
+        #expect(fetched.needsRestocking == true)
+        #expect(fetched.restockThreshold == 0)
+    }
+
+    @Test(
+        "create + item(id:) round-trips restockThreshold (including nil)",
+        arguments: RepositoryFactory.all)
+    func restockThresholdRoundTrips(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let kitchen = try await Self.makeKitchen(bundle)
+
+        let withThreshold = Item(
+            locationID: kitchen.id,
+            name: "Milk",
+            quantity: 5,
+            restockThreshold: 2
+        )
+        try await bundle.item.create(withThreshold)
+        let withFetched = try #require(try await bundle.item.item(id: withThreshold.id))
+        #expect(withFetched.restockThreshold == 2)
+
+        let withoutThreshold = Item(
+            locationID: kitchen.id,
+            name: "Bread"
+        )
+        try await bundle.item.create(withoutThreshold)
+        let withoutFetched = try #require(try await bundle.item.item(id: withoutThreshold.id))
+        #expect(withoutFetched.restockThreshold == nil)
+    }
+
+    /// Shared kitchen-location helper. Mirrors the local lambdas in
+    /// the other contract suites — keeps test bodies focused on the
+    /// behavior under test rather than the household / location
+    /// bootstrap ceremony.
+    private static func makeKitchen(_ bundle: RepositoryBundle) async throws -> Location {
+        let house = try await bundle.household.currentHousehold()
+        let kitchen = Location(householdID: house.id, name: "Kitchen")
+        try await bundle.location.create(kitchen)
+        return kitchen
+    }
+}
+
 @Suite("ItemPhotoRepository contract")
 struct ItemPhotoRepositoryContractTests {
     @Test(

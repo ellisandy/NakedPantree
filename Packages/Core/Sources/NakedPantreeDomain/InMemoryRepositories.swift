@@ -181,13 +181,21 @@ public actor InMemoryItemRepository: ItemRepository {
     }
 
     public func create(_ item: Item) async throws {
-        items[item.id] = item
+        // Issue #153: evaluate the auto-flag-when-low rule before
+        // persisting so a brand-new item created with `quantity == 0`
+        // and a non-nil threshold lands on the Needs Restocking list
+        // immediately. See `ItemRepository` doc for the contract.
+        items[item.id] = Self.applyAutoFlagWhenLow(item)
     }
 
     public func update(_ item: Item) async throws {
         var stamped = item
         stamped.updatedAt = Date()
-        items[item.id] = stamped
+        // Issue #153: same rule as create — every full-update path
+        // re-evaluates the threshold. The repository is the canonical
+        // place for this so future save paths (barcode scan #4, OCR
+        // #137) inherit the behavior automatically.
+        items[item.id] = Self.applyAutoFlagWhenLow(stamped)
     }
 
     public func updateQuantity(id: Item.ID, quantity: Int32) async throws {
@@ -197,7 +205,30 @@ public actor InMemoryItemRepository: ItemRepository {
         guard var existing = items[id] else { return }
         existing.quantity = quantity
         existing.updatedAt = Date()
-        items[id] = existing
+        // Issue #153: even on the partial path, the auto-flag rule
+        // evaluates against the freshly-written quantity. A
+        // stepper-driven decrement that crosses the threshold
+        // line should land on Needs Restocking without the user
+        // opening the form.
+        items[id] = Self.applyAutoFlagWhenLow(existing)
+    }
+
+    /// Issue #153: shared auto-flag-when-low evaluation. Pure
+    /// function so the rule is identical across `create`, `update`,
+    /// and `updateQuantity`. Returns the item unchanged when no
+    /// threshold is set, when quantity is above threshold, or when
+    /// the flag is already true.
+    private static func applyAutoFlagWhenLow(_ item: Item) -> Item {
+        guard
+            let threshold = item.restockThreshold,
+            item.quantity <= threshold,
+            !item.needsRestocking
+        else {
+            return item
+        }
+        var flagged = item
+        flagged.needsRestocking = true
+        return flagged
     }
 
     public func setNeedsRestocking(id: Item.ID, needsRestocking: Bool) async throws {

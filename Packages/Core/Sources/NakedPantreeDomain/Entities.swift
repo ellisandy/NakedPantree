@@ -69,6 +69,23 @@ public struct Item: Sendable, Hashable, Identifiable {
     /// without migration; the new column writes `false` on insert and
     /// the in-memory store seeds it the same way.
     public var needsRestocking: Bool
+    /// Issue #153: per-item auto-flag-when-low threshold. `nil` means the
+    /// item opts out of automatic flagging — the only way it lands on
+    /// the Needs Restocking list is via the existing `quantity == 0` or
+    /// manual `needsRestocking == true` paths from #16.
+    ///
+    /// When non-nil, the repository evaluates `quantity <= threshold` on
+    /// every save path and flips `needsRestocking` to `true` if the
+    /// item isn't already flagged. Threshold `0` is a valid value —
+    /// flips at zero, matching the existing out-of-stock signal but
+    /// explicit per-item.
+    ///
+    /// **One-way trigger by design.** The flag never auto-clears even
+    /// when quantity climbs back above threshold — the spec says the
+    /// flag means "I told the app I want this on the grocery list,"
+    /// and the user owns when it leaves (via the existing detail
+    /// toggle / swipe action).
+    public var restockThreshold: Int32?
     public let createdAt: Date
     public var updatedAt: Date
 
@@ -81,6 +98,7 @@ public struct Item: Sendable, Hashable, Identifiable {
         expiresAt: Date? = nil,
         notes: String? = nil,
         needsRestocking: Bool = false,
+        restockThreshold: Int32? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -92,6 +110,7 @@ public struct Item: Sendable, Hashable, Identifiable {
         self.expiresAt = expiresAt
         self.notes = notes
         self.needsRestocking = needsRestocking
+        self.restockThreshold = restockThreshold
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

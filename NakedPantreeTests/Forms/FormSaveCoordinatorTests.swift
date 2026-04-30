@@ -252,6 +252,89 @@ struct ItemFormSaveCoordinatorTests {
         #expect(fromNewLocation.contains(where: { $0.id == original.id }))
     }
 
+    /// Issue #153: the draft's `restockThreshold` is the form's
+    /// toggle+stepper collapsed into the optional domain field.
+    /// Pin that the create branch hands the threshold straight
+    /// through to the persisted item. The auto-flag-when-low rule
+    /// itself is the repository's responsibility — covered by the
+    /// `ItemRepository` contract test in `RepositoryContractTests`.
+    @Test("Create — draft restockThreshold flows through to the persisted item")
+    func createPersistsRestockThreshold() async throws {
+        let repo = InMemoryItemRepository()
+        let center = StubNotificationCenter()
+        let scheduler = NotificationScheduler(servicing: center)
+        let locationID = UUID()
+
+        let draft = ItemFormDraft(
+            locationID: locationID,
+            name: "Milk",
+            quantity: 5,
+            unit: .count,
+            hasExpiry: false,
+            expiresAt: .now,
+            notes: "",
+            restockThreshold: 2
+        )
+
+        let saved = try await ItemFormSaveCoordinator.save(
+            mode: .create(locationID: locationID),
+            draft: draft,
+            repository: repo,
+            scheduler: scheduler
+        )
+
+        #expect(saved.restockThreshold == 2)
+        // Quantity 5 > threshold 2 — the auto-flag rule shouldn't fire,
+        // so `needsRestocking` stays at the default `false`.
+        #expect(saved.needsRestocking == false)
+    }
+
+    @Test("Edit — draft restockThreshold updates and can be cleared back to nil")
+    func editUpdatesAndClearsRestockThreshold() async throws {
+        let originalCreated = Date(timeIntervalSince1970: 1_700_000_000)
+        let original = Item(
+            id: UUID(),
+            locationID: UUID(),
+            name: "Milk",
+            quantity: 3,
+            unit: .count,
+            restockThreshold: 1,
+            createdAt: originalCreated
+        )
+        let repo = InMemoryItemRepository(initial: [original])
+        let center = StubNotificationCenter()
+        let scheduler = NotificationScheduler(servicing: center)
+
+        // First edit: bump threshold to 5.
+        var draft = ItemFormDraft(
+            locationID: original.locationID,
+            name: "Milk",
+            quantity: 3,
+            unit: .count,
+            hasExpiry: false,
+            expiresAt: .now,
+            notes: "",
+            restockThreshold: 5
+        )
+        var saved = try await ItemFormSaveCoordinator.save(
+            mode: .edit(original),
+            draft: draft,
+            repository: repo,
+            scheduler: scheduler
+        )
+        #expect(saved.restockThreshold == 5)
+
+        // Second edit: turn the threshold off (toggle → nil draft).
+        draft.restockThreshold = nil
+        saved = try await ItemFormSaveCoordinator.save(
+            mode: .edit(saved),
+            draft: draft,
+            repository: repo,
+            scheduler: scheduler
+        )
+        #expect(saved.restockThreshold == nil)
+    }
+
     @Test("Repository error — propagates and scheduler is never called")
     func repositoryErrorPropagates() async throws {
         let repo = ThrowingItemRepository()

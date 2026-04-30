@@ -21,6 +21,39 @@ struct ItemFormDraft {
     var hasExpiry: Bool
     var expiresAt: Date
     var notes: String
+    /// Issue #153: per-item restock threshold. `nil` means the user
+    /// turned the toggle off (or never turned it on); the auto-flag-
+    /// when-low rule in the repository skips items with a nil
+    /// threshold. Threshold `0` is a valid non-nil value.
+    var restockThreshold: Int32?
+
+    /// Explicit init so the synthesized memberwise initializer doesn't
+    /// force every call site to specify `restockThreshold` — the
+    /// pre-#153 draft constructions (and pre-#153 tests) compile
+    /// without edit and stay opt-in per the issue's "no surprise
+    /// behavior on existing data" rule. SwiftLint's
+    /// `implicit_optional_initialization` rule blocks the simpler
+    /// `= nil` on the stored property, so the default lives on the
+    /// init parameter instead.
+    init(
+        locationID: Location.ID,
+        name: String,
+        quantity: Int32,
+        unit: NakedPantreeDomain.Unit,
+        hasExpiry: Bool,
+        expiresAt: Date,
+        notes: String,
+        restockThreshold: Int32? = nil
+    ) {
+        self.locationID = locationID
+        self.name = name
+        self.quantity = quantity
+        self.unit = unit
+        self.hasExpiry = hasExpiry
+        self.expiresAt = expiresAt
+        self.notes = notes
+        self.restockThreshold = restockThreshold
+    }
 }
 
 /// Save logic extracted from `ItemFormView` (issue #117). Lives here
@@ -80,7 +113,12 @@ enum ItemFormSaveCoordinator {
                 quantity: draft.quantity,
                 unit: draft.unit,
                 expiresAt: resolvedExpiry,
-                notes: resolvedNotes
+                notes: resolvedNotes,
+                // Issue #153: pass the threshold through. The
+                // repository's auto-flag rule will set
+                // `needsRestocking` to true on insert if the initial
+                // quantity is at or below threshold.
+                restockThreshold: draft.restockThreshold
             )
             try await repository.create(item)
             saved = item
@@ -98,6 +136,10 @@ enum ItemFormSaveCoordinator {
             updated.unit = draft.unit
             updated.expiresAt = resolvedExpiry
             updated.notes = resolvedNotes
+            // Issue #153: edit mode rebinds the threshold too, so the
+            // user can change the auto-flag value (or turn it off
+            // entirely) without re-creating the item.
+            updated.restockThreshold = draft.restockThreshold
             try await repository.update(updated)
             saved = updated
         }

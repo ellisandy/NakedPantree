@@ -95,6 +95,24 @@ public func normalizedLocationName(_ name: String) -> String {
 /// writing — the value passed in by the caller is overwritten. Tests may
 /// inject a clock indirectly by reading the persisted record back; the
 /// protocol does not expose one.
+///
+/// **Auto-flag-when-low contract (issue #153).** `create(_:)`,
+/// `update(_:)`, and `updateQuantity(id:quantity:)` must evaluate the
+/// auto-flip rule before writing:
+///
+/// ```
+/// if let threshold = item.restockThreshold,
+///    item.quantity <= threshold,
+///    item.needsRestocking == false {
+///     item.needsRestocking = true
+/// }
+/// ```
+///
+/// The rule fires only when transitioning `false → true`, never the
+/// other direction — a manually-cleared flag stays cleared even when
+/// quantity is still below threshold. `setNeedsRestocking(...)` is
+/// exempt from the auto-flip rule because it's the explicit user-
+/// override path; respecting their intent there is the whole point.
 public protocol ItemRepository: Sendable {
     func items(in locationID: Location.ID) async throws -> [Item]
     func item(id: Item.ID) async throws -> Item?
