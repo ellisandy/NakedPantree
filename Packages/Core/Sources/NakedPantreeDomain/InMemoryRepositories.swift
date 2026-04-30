@@ -151,6 +151,16 @@ public actor InMemoryItemRepository: ItemRepository {
         items[item.id] = stamped
     }
 
+    public func updateQuantity(id: Item.ID, quantity: Int32) async throws {
+        // Issue #118: partial update — touch only `quantity` and
+        // stamp `updatedAt`. The actor's serial isolation makes
+        // this atomic against concurrent `update(_:)` calls.
+        guard var existing = items[id] else { return }
+        existing.quantity = quantity
+        existing.updatedAt = Date()
+        items[id] = existing
+    }
+
     public func delete(id: Item.ID) async throws {
         items.removeValue(forKey: id)
     }

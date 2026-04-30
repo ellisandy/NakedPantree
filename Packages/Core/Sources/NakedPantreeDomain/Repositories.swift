@@ -58,6 +58,20 @@ public protocol ItemRepository: Sendable {
     func search(_ query: String, in householdID: Household.ID) async throws -> [Item]
     func create(_ item: Item) async throws
     func update(_ item: Item) async throws
+    /// Partial update that touches only `quantity` (and stamps
+    /// `updatedAt`), leaving every other attribute untouched. Issue
+    /// #118: `QuantityStepperModel.persist` previously did a full
+    /// fetch-modify-save round-trip, which races edit-form saves of
+    /// `name` / `expiresAt` — the stepper's fetch could see a stale
+    /// value the form had just changed and overwrite it. This is the
+    /// atomic alternative; implementations write `quantity` directly
+    /// to the store row without round-tripping through an `Item`
+    /// value type the caller mutates.
+    ///
+    /// No-op if the item doesn't exist (deleted between debounce
+    /// schedule and persist) — same shape as `update(_:)`'s
+    /// silent-skip semantics on a missing row.
+    func updateQuantity(id: Item.ID, quantity: Int32) async throws
     func delete(id: Item.ID) async throws
 }
 
