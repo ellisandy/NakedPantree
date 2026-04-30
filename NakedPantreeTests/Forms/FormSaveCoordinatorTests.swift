@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import NakedPantree
 @testable import NakedPantreeDomain
 
@@ -217,6 +218,23 @@ struct ItemFormSaveCoordinatorTests {
         #expect(center.addedRequests.isEmpty)
         #expect(center.removedIdentifiersBatches.isEmpty)
     }
+
+    /// Issue #109: writes are local-first regardless of iCloud account
+    /// status. `NSPersistentCloudKitContainer` queues unsynced writes in
+    /// its local store and replays them once the account becomes
+    /// `.available` again, so threading `AccountStatusMonitor` into the
+    /// save path would only degrade offline-first behavior without
+    /// preventing data loss. This binding pins the parameter list — if
+    /// a future refactor adds a required `monitor:` parameter, the
+    /// assignment fails to compile and forces a re-read of the policy
+    /// doc in `AccountStatusMonitor.swift`.
+    @Test("Issue #109: save signature has no AccountStatusMonitor parameter")
+    func saveSignatureOmitsAccountStatusGuard() {
+        let _:
+            (
+                ItemFormView.Mode, ItemFormDraft, any ItemRepository, NotificationScheduler
+            ) async throws -> Item = ItemFormSaveCoordinator.save
+    }
 }
 
 // MARK: - Location form
@@ -293,6 +311,18 @@ struct LocationFormSaveCoordinatorTests {
                 repository: repo
             )
         }
+    }
+
+    /// Companion to `ItemFormSaveCoordinatorTests.saveSignatureOmitsAccountStatusGuard`.
+    /// Same intent: pin the parameter list so issue #109's local-first
+    /// policy can't be silently undone. See the policy paragraph in
+    /// `AccountStatusMonitor.swift` for the rationale.
+    @Test("Issue #109: save signature has no AccountStatusMonitor parameter")
+    func saveSignatureOmitsAccountStatusGuard() {
+        let _:
+            (
+                LocationFormView.Mode, LocationFormDraft, any LocationRepository
+            ) async throws -> Location = LocationFormSaveCoordinator.save
     }
 }
 

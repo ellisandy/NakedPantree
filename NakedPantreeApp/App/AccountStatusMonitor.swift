@@ -37,6 +37,19 @@ enum AccountStatus: Sendable, Hashable {
 /// and refreshes whenever `.CKAccountChanged` fires; the brief moment
 /// before the first probe finishes shows no banner, which is the same
 /// outcome as a healthy account — acceptable.
+///
+/// **Policy: writes are local-first regardless of account status (issue #109).**
+/// `ItemFormSaveCoordinator` / `LocationFormSaveCoordinator` deliberately
+/// don't consult this monitor before persisting — `NSPersistentCloudKitContainer`
+/// queues unsynced writes in its local store and replays them once the
+/// account becomes `.available` again. The banner is the only signal we
+/// surface; we don't gate the save button or block writes when the user
+/// is signed out, restricted, or offline. Adding a write-time guard here
+/// would degrade the offline-first experience (a brief network blip would
+/// stop edits) without preventing data loss — the data is already on
+/// disk. If you're tempted to thread `accountStatus` into a save path,
+/// re-read this paragraph and the structural test in
+/// `FormSaveCoordinatorTests` first.
 @Observable
 @MainActor
 final class AccountStatusMonitor {

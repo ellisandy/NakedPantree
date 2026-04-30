@@ -61,9 +61,15 @@ extension AccountStatus {
         case .available:
             nil
         case .noAccount:
-            "Sign in to iCloud to keep your pantry in sync across devices."
+            // Issue #109: spell out the local-first policy explicitly so a
+            // signed-out user understands their edits are not lost. The
+            // `Settings` button still offers the path back to syncing.
+            "Signed out of iCloud. Changes save on this device and will sync when you sign back in."
         case .restricted:
-            "iCloud is restricted on this device. Changes won't sync."
+            // Issue #109: parallel framing to `.noAccount` — restricted
+            // accounts can't sign in to remediate, but local saves still
+            // succeed. Avoid implying the device is read-only.
+            "iCloud is restricted on this device. Changes save here but won't sync."
         case .couldNotDetermine:
             "iCloud is unreachable. Changes will sync when it's back."
         case .temporarilyUnavailable:
