@@ -93,7 +93,7 @@ struct LocationFormView: View {
     }
 
     private var isValid: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        LocationFormSaveCoordinator.isValid(name: name)
     }
 
     private func prefill() {
@@ -105,21 +105,18 @@ struct LocationFormView: View {
 
     @MainActor
     private func save() async {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Issue #117: persistence lives in `LocationFormSaveCoordinator`;
+        // view keeps the spinner / banner / dismiss responsibilities.
+        let draft = LocationFormDraft(name: name, kind: kind)
         isSaving = true
         defer { isSaving = false }
 
         do {
-            switch mode {
-            case .create(let householdID):
-                let location = Location(householdID: householdID, name: trimmed, kind: kind)
-                try await repositories.location.create(location)
-            case .edit(let original):
-                var updated = original
-                updated.name = trimmed
-                updated.kind = kind
-                try await repositories.location.update(updated)
-            }
+            _ = try await LocationFormSaveCoordinator.save(
+                mode: mode,
+                draft: draft,
+                repository: repositories.location
+            )
             onSaved()
             dismiss()
         } catch {

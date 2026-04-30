@@ -115,7 +115,7 @@ struct ItemFormView: View {
     }
 
     private var isValid: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        ItemFormSaveCoordinator.isValid(name: name)
     }
 
     private func prefill() {
@@ -133,43 +133,27 @@ struct ItemFormView: View {
 
     @MainActor
     private func save() async {
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedNotes: String? = trimmedNotes.isEmpty ? nil : trimmedNotes
-        let resolvedExpiry: Date? = hasExpiry ? expiresAt : nil
-
+        // Issue #117: persistence + post-save scheduling now live in
+        // `ItemFormSaveCoordinator`. The view stays responsible for the
+        // SwiftUI surface (saving spinner, error banner, dismiss).
+        let draft = ItemFormDraft(
+            name: name,
+            quantity: quantity,
+            unit: unit,
+            hasExpiry: hasExpiry,
+            expiresAt: expiresAt,
+            notes: notes
+        )
         isSaving = true
         defer { isSaving = false }
 
         do {
-            let saved: Item
-            switch mode {
-            case .create(let locationID):
-                let item = Item(
-                    locationID: locationID,
-                    name: trimmedName,
-                    quantity: quantity,
-                    unit: unit,
-                    expiresAt: resolvedExpiry,
-                    notes: resolvedNotes
-                )
-                try await repositories.item.create(item)
-                saved = item
-            case .edit(let original):
-                var updated = original
-                updated.name = trimmedName
-                updated.quantity = quantity
-                updated.unit = unit
-                updated.expiresAt = resolvedExpiry
-                updated.notes = resolvedNotes
-                try await repositories.item.update(updated)
-                saved = updated
-            }
-            // Phase 4.1: schedule (or clear) the expiry notification
-            // off the just-persisted item. `scheduleIfNeeded` handles
-            // the nil-expiry case symmetrically with create vs edit —
-            // clearing an expiry on edit cancels the pending request.
-            await notificationScheduler.scheduleIfNeeded(for: saved)
+            _ = try await ItemFormSaveCoordinator.save(
+                mode: mode,
+                draft: draft,
+                repository: repositories.item,
+                scheduler: notificationScheduler
+            )
             onSaved()
             dismiss()
         } catch {
