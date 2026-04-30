@@ -345,7 +345,9 @@ final class QuantityStepperModel {
             try? await Task.sleep(for: interval)
             guard !Task.isCancelled else { return }
             await self?.persistIfChanged()
-            await self?.clearPendingTask(matching: token)
+            // `clearPendingTask` is sync and the surrounding Task is
+            // already MainActor-isolated, so no `await` is needed.
+            self?.clearPendingTask(matching: token)
         }
     }
 

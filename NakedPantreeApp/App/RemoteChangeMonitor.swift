@@ -57,13 +57,12 @@ final class RemoteChangeMonitor {
     /// `changeToken` never bumps.
     nonisolated let isObserving: Bool
 
-    // `nonisolated(unsafe)` so `deinit` (which Swift treats as
-    // nonisolated) can cancel the task. The compiler nudges to drop
-    // the `(unsafe)` since `Task<Void, Never>` is Sendable, but the
-    // `@Observable` macro's generated backing storage rejects bare
-    // `nonisolated` on mutable stored properties — so we keep
-    // `(unsafe)` and live with the warning.
-    nonisolated(unsafe) private var task: Task<Void, Never>?
+    // Held inside a `Sendable` `MutableTaskHolder` so `deinit`
+    // (nonisolated) can read it without hopping back to the main
+    // actor. Same pattern as `AccountStatusMonitor` — see the type's
+    // doc comment for the rationale.
+    @ObservationIgnored
+    nonisolated private let taskHolder = MutableTaskHolder()
 
     /// Pending debounce timer. Each incoming notification cancels the
     /// previous timer and starts a new one — only the last
@@ -147,7 +146,7 @@ final class RemoteChangeMonitor {
             named: .NSPersistentStoreRemoteChange,
             object: container.persistentStoreCoordinator
         )
-        task = Task { @MainActor [weak self] in
+        taskHolder.task = Task { @MainActor [weak self] in
             for await _ in stream {
                 self?.scheduleRefresh()
             }
@@ -155,7 +154,7 @@ final class RemoteChangeMonitor {
     }
 
     deinit {
-        task?.cancel()
+        taskHolder.task?.cancel()
     }
 
     private func scheduleRefresh() {

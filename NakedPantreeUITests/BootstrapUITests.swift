@@ -8,6 +8,7 @@ import XCTest
 /// `SidebarView`'s `.task` ran concurrently — the empty-fetch raced
 /// the bootstrap insert and won, so the sidebar's Locations section
 /// stayed empty until the user manually triggered a refresh.
+@MainActor
 final class BootstrapUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false

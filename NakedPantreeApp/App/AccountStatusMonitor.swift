@@ -42,7 +42,20 @@ enum AccountStatus: Sendable, Hashable {
 final class AccountStatusMonitor {
     private(set) var status: AccountStatus = .available
 
-    nonisolated(unsafe) private var task: Task<Void, Never>?
+    /// Cancellation handle for the in-flight account-status fetch.
+    /// Stored inside a `Sendable` holder so `deinit` (nonisolated)
+    /// can read it without hopping back to the main actor.
+    /// `@ObservationIgnored` keeps the `@Observable` macro from
+    /// observing an implementation detail.
+    ///
+    /// Earlier versions used `nonisolated(unsafe) private var task`,
+    /// which the Swift 6 compiler flags with a "has no effect, consider
+    /// using 'nonisolated'" warning — but bare `nonisolated` is then
+    /// rejected for mutable stored properties. The holder is the clean
+    /// way out: `let`-stored so `nonisolated` reads work, with the
+    /// mutable slot living inside a `Sendable` reference type.
+    @ObservationIgnored
+    nonisolated private let taskHolder = MutableTaskHolder()
 
     /// No-op monitor for previews and tests. Status stays `.available`
     /// so the banner is hidden. `nonisolated` so the `@Entry` default
@@ -51,7 +64,7 @@ final class AccountStatusMonitor {
 
     init(container: CKContainer) {
         let stream = NotificationCenter.default.notifications(named: .CKAccountChanged)
-        task = Task { @MainActor [weak self] in
+        taskHolder.task = Task { @MainActor [weak self] in
             await self?.refresh(using: container)
             for await _ in stream {
                 await self?.refresh(using: container)
@@ -60,7 +73,7 @@ final class AccountStatusMonitor {
     }
 
     deinit {
-        task?.cancel()
+        taskHolder.task?.cancel()
     }
 
     private func refresh(using container: CKContainer) async {
@@ -93,4 +106,19 @@ final class AccountStatusMonitor {
 
 extension EnvironmentValues {
     @Entry var accountStatusMonitor = AccountStatusMonitor()
+}
+
+/// Reference-type box that holds the in-flight `Task` for
+/// `AccountStatusMonitor` and `RemoteChangeMonitor`. Lives outside
+/// either class so a `nonisolated let taskHolder` field can be read
+/// from `deinit` without re-entering the main actor — the mutable
+/// slot is inside a `@unchecked Sendable` class instead of being a
+/// mutable stored property on the `@MainActor` enclosing type.
+///
+/// `@unchecked Sendable` is honest here: the `task` slot is only
+/// written from the enclosing class's MainActor-isolated init / setter
+/// paths, and only read from `deinit`. There's no concurrent mutation
+/// to checked-Sendable away.
+final class MutableTaskHolder: @unchecked Sendable {
+    var task: Task<Void, Never>?
 }
