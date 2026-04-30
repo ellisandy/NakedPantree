@@ -450,6 +450,53 @@ struct ItemRepositoryContractTests {
         #expect(after.updatedAt > Date(timeIntervalSince1970: 2))
     }
 
+    /// Issue #134: an `update` whose item carries a different
+    /// `locationID` reassigns the item to that location. Pins the
+    /// repository contract that `ItemFormSaveCoordinator` relies on
+    /// to power the move-on-edit UX. CoreData mutates the
+    /// `location` relationship via `attachLocation`; the in-memory
+    /// repo replaces the row by id.
+    @Test(
+        "update with a new locationID moves the item between locations (#134)",
+        arguments: RepositoryFactory.all)
+    func updateReassignsLocation(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let itemRepo = bundle.item
+        let house = try await household.currentHousehold()
+        let pantry = Location(householdID: house.id, name: "Pantry")
+        let freezer = Location(householdID: house.id, name: "Garage Freezer", kind: .freezer)
+        try await locationRepo.create(pantry)
+        try await locationRepo.create(freezer)
+
+        var chili = Item(locationID: pantry.id, name: "Chili", quantity: 1, unit: .count)
+        try await itemRepo.create(chili)
+
+        // Sanity-check the create landed in pantry; the move test
+        // depends on starting state being correct.
+        let beforePantry = try await itemRepo.items(in: pantry.id)
+        #expect(beforePantry.map(\.id) == [chili.id])
+
+        chili.locationID = freezer.id
+        try await itemRepo.update(chili)
+
+        // After the move: the item shows up under freezer and is
+        // gone from pantry. Both halves matter — a half-finished
+        // implementation that copies the row instead of moving
+        // would leave duplicates at the old location.
+        let afterPantry = try await itemRepo.items(in: pantry.id)
+        let afterFreezer = try await itemRepo.items(in: freezer.id)
+        #expect(afterPantry.isEmpty, "Item should no longer appear under the old location.")
+        #expect(afterFreezer.map(\.id) == [chili.id])
+
+        // Identity / history preserved: same id, same createdAt.
+        let fetched = try #require(try await itemRepo.item(id: chili.id))
+        #expect(fetched.id == chili.id)
+        #expect(fetched.locationID == freezer.id)
+        #expect(fetched.createdAt == chili.createdAt)
+    }
+
     @Test(
         "updateQuantity changes only quantity, leaves name and expiresAt untouched (#118)",
         arguments: RepositoryFactory.all)

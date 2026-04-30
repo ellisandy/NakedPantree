@@ -36,6 +36,7 @@ struct ItemFormSaveCoordinatorTests {
         let locationID = UUID()
 
         let draft = ItemFormDraft(
+            locationID: locationID,
             name: "  Sourdough  ",
             quantity: 2,
             unit: .count,
@@ -77,6 +78,7 @@ struct ItemFormSaveCoordinatorTests {
         // and the "add" branch runs.
         let future = Date.now.addingTimeInterval(60 * 60 * 24 * 30)
         let draft = ItemFormDraft(
+            locationID: locationID,
             name: "Tomatoes",
             quantity: 1,
             unit: .count,
@@ -108,6 +110,7 @@ struct ItemFormSaveCoordinatorTests {
         let locationID = UUID()
 
         let draft = ItemFormDraft(
+            locationID: locationID,
             name: "Tinned tuna",
             quantity: 4,
             unit: .count,
@@ -153,6 +156,10 @@ struct ItemFormSaveCoordinatorTests {
         let scheduler = NotificationScheduler(servicing: center)
 
         let draft = ItemFormDraft(
+            // Same locationID as the original — this test pins the
+            // edit-without-move case. Issue #134's move-on-edit case
+            // is covered separately in `editReassignsLocationID`.
+            locationID: original.locationID,
             name: "  Sourdough  ",
             quantity: 3,
             unit: .package,
@@ -188,6 +195,63 @@ struct ItemFormSaveCoordinatorTests {
         #expect(removedFlat.contains(expected))
     }
 
+    /// Issue #134: edit-mode save honours the draft's `locationID` —
+    /// the picker can move an item between locations. Pins the
+    /// behavior that #134 added so a future refactor that drops
+    /// the line `updated.locationID = draft.locationID` (it would
+    /// be easy to overlook in a sweep) fails the test rather than
+    /// silently sending every move-edit back to the original
+    /// location.
+    @Test("Edit — draft locationID overrides the original (move between locations)")
+    func editReassignsLocationID() async throws {
+        let oldLocation = UUID()
+        let newLocation = UUID()
+        let original = Item(
+            id: UUID(),
+            locationID: oldLocation,
+            name: "Chili",
+            quantity: 1,
+            unit: .count,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let repo = InMemoryItemRepository(initial: [original])
+        let center = StubNotificationCenter()
+        let scheduler = NotificationScheduler(servicing: center)
+
+        let draft = ItemFormDraft(
+            // The draft says "save into the new location" — the
+            // edit branch must respect that, not fall back to
+            // `original.locationID`.
+            locationID: newLocation,
+            name: "Chili",
+            quantity: 1,
+            unit: .count,
+            hasExpiry: false,
+            expiresAt: .now,
+            notes: ""
+        )
+
+        let saved = try await ItemFormSaveCoordinator.save(
+            mode: .edit(original),
+            draft: draft,
+            repository: repo,
+            scheduler: scheduler
+        )
+
+        #expect(saved.id == original.id, "Move must preserve item identity.")
+        #expect(saved.createdAt == original.createdAt, "Move must preserve createdAt.")
+        #expect(saved.locationID == newLocation, "Move must reassign locationID.")
+
+        // Repo round-trip: the item lives at the new location now,
+        // not the old one. `items(in:)` is the surface UI uses to
+        // populate per-location lists, so this is the contract that
+        // makes the sidebar list show the moved item correctly.
+        let fromOldLocation = try await repo.items(in: oldLocation)
+        let fromNewLocation = try await repo.items(in: newLocation)
+        #expect(fromOldLocation.isEmpty, "Old location should no longer contain the item.")
+        #expect(fromNewLocation.contains(where: { $0.id == original.id }))
+    }
+
     @Test("Repository error — propagates and scheduler is never called")
     func repositoryErrorPropagates() async throws {
         let repo = ThrowingItemRepository()
@@ -195,6 +259,7 @@ struct ItemFormSaveCoordinatorTests {
         let scheduler = NotificationScheduler(servicing: center)
 
         let draft = ItemFormDraft(
+            locationID: UUID(),
             name: "Bread",
             quantity: 1,
             unit: .count,

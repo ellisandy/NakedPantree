@@ -48,7 +48,14 @@ public struct Location: Sendable, Hashable, Identifiable {
 /// — callers should not set it directly. See `ItemRepository.update(_:)`.
 public struct Item: Sendable, Hashable, Identifiable {
     public let id: UUID
-    public let locationID: Location.ID
+    /// `var` so an item can be reassigned to a different location within
+    /// the same household — issue #134. Real pantry items move (the
+    /// chili that was in the outdoor freezer comes inside; the package
+    /// in the garage shelf moves to the pantry). Cross-household moves
+    /// are intentionally not supported — callers must keep
+    /// `Location.householdID` consistent or the repository's
+    /// scope-routing breaks.
+    public var locationID: Location.ID
     public var name: String
     public var quantity: Int32
     public var unit: Unit
