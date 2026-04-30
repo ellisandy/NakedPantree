@@ -80,6 +80,18 @@ enum ShareSheetPreparation {
             }
             group.addTask {
                 try? await Task.sleep(for: timeout)
+                // Skip the log when this task lost the race and the
+                // group cancelled us out of `Task.sleep`. Without the
+                // guard, a successful prepare emits a misleading
+                // "timed out" line right after "succeeded — payload
+                // ready" because `try?` swallows `CancellationError`
+                // and the rest of the closure runs anyway. The
+                // returned `.failure(TimeoutError())` itself is fine
+                // — it gets discarded by the group's first-result
+                // semantic — but the log line still ships.
+                if Task.isCancelled {
+                    return .failure(CancellationError())
+                }
                 Self.logger.error(
                     "ShareSheetPreparation timed out after \(timeout, privacy: .public)"
                 )
