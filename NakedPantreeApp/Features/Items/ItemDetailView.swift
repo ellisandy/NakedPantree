@@ -166,6 +166,13 @@ struct ItemDetailView: View {
                 }
             }
 
+            // Issue #16: persistent toggle for the "Needs Restocking"
+            // smart list. Lives in its own subview to keep this
+            // detail body under SwiftLint's `type_body_length`
+            // ceiling — see the photo extension below for the same
+            // rationale.
+            RestockSection(item: item)
+
             if let expiresAt = item.expiresAt {
                 Section("Expires") {
                     Text(expiresAt, style: .date)

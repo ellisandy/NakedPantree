@@ -49,6 +49,20 @@ struct ExpiringSoonView: View {
                             locationName: locationsByID[item.locationID]?.name
                         )
                         .tag(item.id)
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            // Issue #16: same restock toggle as the
+                            // other smart lists. Useful here for "this
+                            // is about to expire AND we'll need a
+                            // replacement" two-bird gestures.
+                            RestockSwipeButton(item: item) { newValue in
+                                Task {
+                                    await toggleRestocking(
+                                        for: item.id,
+                                        to: newValue
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
                 .scrollContentBackground(.hidden)
@@ -81,6 +95,19 @@ struct ExpiringSoonView: View {
             items = []
         }
         didLoad = true
+    }
+
+    /// Issue #16: persists the swipe-action toggle and reloads.
+    private func toggleRestocking(for id: Item.ID, to newValue: Bool) async {
+        do {
+            try await repositories.item.setNeedsRestocking(
+                id: id,
+                needsRestocking: newValue
+            )
+            await load()
+        } catch {
+            // Soft-fail — next remote-change tick reloads.
+        }
     }
 }
 

@@ -115,6 +115,8 @@ struct ItemsView: View {
             ExpiringSoonView(selectedItemID: $selectedItemID)
         case .recentlyAdded:
             RecentlyAddedView(selectedItemID: $selectedItemID)
+        case .needsRestocking:
+            NeedsRestockingView(selectedItemID: $selectedItemID)
         }
     }
 
@@ -149,6 +151,20 @@ struct ItemsView: View {
                             }
                             .tint(.indigo)
                         }
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            // Issue #16: leading edge for the
+                            // restock toggle keeps it visually
+                            // distinct from the destructive trailing
+                            // actions.
+                            RestockSwipeButton(item: item) { newValue in
+                                Task {
+                                    await toggleRestocking(
+                                        for: item.id,
+                                        to: newValue
+                                    )
+                                }
+                            }
+                        }
                 }
             }
             .scrollContentBackground(.hidden)
@@ -164,6 +180,24 @@ struct ItemsView: View {
     @ViewBuilder
     private func placeholder(_ message: String) -> some View {
         ContentUnavailableView(message, systemImage: "list.bullet")
+    }
+
+    /// Issue #16: persists the swipe-action toggle and reloads. Hides
+    /// repository-call ceremony from the row's `.swipeActions` block
+    /// where it would clutter the view body.
+    private func toggleRestocking(for id: Item.ID, to newValue: Bool) async {
+        do {
+            try await repositories.item.setNeedsRestocking(
+                id: id,
+                needsRestocking: newValue
+            )
+            if case .location(let locationID) = selection {
+                await reload(locationID: locationID)
+            }
+        } catch {
+            // Soft-fail — the next remote-change tick will reload
+            // canonical state. Same shape as `delete`'s catch arm.
+        }
     }
 
     private func reload(locationID: Location.ID) async {

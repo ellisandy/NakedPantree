@@ -38,6 +38,20 @@ struct SearchResultsView: View {
                             locationName: locationsByID[item.locationID]?.name
                         )
                         .tag(item.id)
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            // Issue #16: search results get the same
+                            // restock toggle as the other lists. The
+                            // refresh after toggle is the existing
+                            // `loadResults` path.
+                            RestockSwipeButton(item: item) { newValue in
+                                Task {
+                                    await toggleRestocking(
+                                        for: item.id,
+                                        to: newValue
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
                 .scrollContentBackground(.hidden)
@@ -86,6 +100,22 @@ struct SearchResultsView: View {
             items = []
         }
         didSearch = true
+    }
+
+    /// Issue #16: persists the swipe-action toggle and re-runs the
+    /// search. The next keystroke would supersede this anyway, but
+    /// reloading immediately keeps the row's swipe-state visually
+    /// in sync.
+    private func toggleRestocking(for id: Item.ID, to newValue: Bool) async {
+        do {
+            try await repositories.item.setNeedsRestocking(
+                id: id,
+                needsRestocking: newValue
+            )
+            await loadResults()
+        } catch {
+            // Soft-fail — next keystroke or remote-change tick reloads.
+        }
     }
 }
 

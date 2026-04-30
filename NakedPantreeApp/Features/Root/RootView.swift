@@ -222,11 +222,13 @@ enum SidebarSelection: Hashable, Sendable {
 /// Sidebar Smart Lists. `All Items` is wired up in Phase 1.5 (cross-
 /// location list with search). The other projections (`expiresAt` within
 /// 7 days, recently-added) arrive with the Smart Lists feature in
-/// Phase 6 — selecting one of those shows a placeholder until then.
+/// Phase 6. `needsRestocking` (issue #16) surfaces flagged or
+/// out-of-stock items — backed by `ItemRepository.needsRestocking(in:)`.
 enum SmartList: String, CaseIterable, Identifiable, Sendable {
     case expiringSoon
     case allItems
     case recentlyAdded
+    case needsRestocking
 
     var id: Self { self }
 
@@ -235,6 +237,7 @@ enum SmartList: String, CaseIterable, Identifiable, Sendable {
         case .expiringSoon: "Expiring Soon"
         case .allItems: "All Items"
         case .recentlyAdded: "Recently Added"
+        case .needsRestocking: "Needs Restocking"
         }
     }
 
@@ -243,6 +246,7 @@ enum SmartList: String, CaseIterable, Identifiable, Sendable {
         case .expiringSoon: "clock.badge.exclamationmark"
         case .allItems: "tray.full"
         case .recentlyAdded: "sparkles"
+        case .needsRestocking: "cart"
         }
     }
 }
