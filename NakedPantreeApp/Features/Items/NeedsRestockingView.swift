@@ -1,25 +1,18 @@
 import NakedPantreeDomain
 import SwiftUI
 
-/// Sorts a household's items by `createdAt` descending — most-recent
-/// adds first. Pure free function so tests can pin the input order
-/// and verify the sort without a Core Data round-trip.
+/// Issue #16: "Needs Restocking" smart-list content column. Cross-
+/// household list of items the user has flagged for restocking
+/// (`needsRestocking == true`) or that are out of stock
+/// (`quantity == 0`). The repository handles the union and sort —
+/// see `ItemRepository.needsRestocking(in:)`.
 ///
-/// No time-window or count cap. The smart list is "items by recency,"
-/// not "items added in the last N days" — a household with 50 items
-/// total still scrolls cheaply, and capping is a polish decision
-/// better made when real-world household sizes are visible. Same
-/// shape as `itemsExpiringSoon` (no cutoff there either) — keep the
-/// two consistent.
-func itemsRecentlyAdded(_ items: [Item]) -> [Item] {
-    items.sorted { $0.createdAt > $1.createdAt }
-}
-
-/// "Recently Added" smart-list content column. Cross-location list of
-/// every item in the household, sorted with the most-recently-added
-/// first. Useful for "what did I just put in" and "did my partner add
-/// anything since I last looked."
-struct RecentlyAddedView: View {
+/// Same shape as `AllItemsView` / `RecentlyAddedView`: load on the
+/// remote-change tick, render rows + leading swipe to flip the flag
+/// off (the swipe label flips to "Got it" when the item is already
+/// flagged), trailing swipe stays empty here — destructive deletes
+/// belong on the per-location list, not on a smart projection.
+struct NeedsRestockingView: View {
     @Binding var selectedItemID: Item.ID?
 
     @Environment(\.repositories) private var repositories
@@ -37,24 +30,14 @@ struct RecentlyAddedView: View {
             } else {
                 List(selection: $selectedItemID) {
                     ForEach(items) { item in
-                        RecentlyAddedRow(
+                        NeedsRestockingRow(
                             item: item,
                             locationName: locationsByID[item.locationID]?.name
                         )
                         .tag(item.id)
                         .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                            // Issue #16: restock toggle on the
-                            // most-recent feed too — sometimes the
-                            // shopper-of-record adds an item right
-                            // after a trip and immediately wants to
-                            // re-flag it for next time.
                             RestockSwipeButton(item: item) { newValue in
-                                Task {
-                                    await toggleRestocking(
-                                        for: item.id,
-                                        to: newValue
-                                    )
-                                }
+                                Task { await toggle(item.id, to: newValue) }
                             }
                         }
                     }
@@ -63,7 +46,7 @@ struct RecentlyAddedView: View {
                 .background(Color.surface)
             }
         }
-        .navigationTitle("Recently Added")
+        .navigationTitle("Needs Restocking")
         .task(id: remoteChangeMonitor.changeToken) {
             await load()
         }
@@ -71,10 +54,14 @@ struct RecentlyAddedView: View {
 
     @ViewBuilder
     private var emptyState: some View {
+        // Voice rule §10: short, calming, with a brand wink that's
+        // *not* about a sync failure (those are off-limits per §9).
+        // "Pantry's stocked." was the canonical line in the issue's
+        // empty-state suggestion — keeping it.
         ContentUnavailableView(
-            "Nothing added yet",
-            systemImage: "sparkles",
-            description: Text("Items you add will show up here.")
+            "Pantry's stocked.",
+            systemImage: "checkmark.seal",
+            description: Text("Items you flag for restocking will show up here.")
         )
     }
 
@@ -83,16 +70,14 @@ struct RecentlyAddedView: View {
             let household = try await repositories.household.currentHousehold()
             let locations = try await repositories.location.locations(in: household.id)
             locationsByID = Dictionary(uniqueKeysWithValues: locations.map { ($0.id, $0) })
-            let allItems = try await repositories.item.allItems(in: household.id)
-            items = itemsRecentlyAdded(allItems)
+            items = try await repositories.item.needsRestocking(in: household.id)
         } catch {
             items = []
         }
         didLoad = true
     }
 
-    /// Issue #16: persists the swipe-action toggle and reloads.
-    private func toggleRestocking(for id: Item.ID, to newValue: Bool) async {
+    private func toggle(_ id: Item.ID, to newValue: Bool) async {
         do {
             try await repositories.item.setNeedsRestocking(
                 id: id,
@@ -100,12 +85,14 @@ struct RecentlyAddedView: View {
             )
             await load()
         } catch {
-            // Soft-fail — next remote-change tick reloads.
+            // Soft-fail — reload picks up canonical state on the
+            // next remote-change tick. Swallowing matches the same
+            // shape as `ItemsView.delete`'s catch arm.
         }
     }
 }
 
-private struct RecentlyAddedRow: View {
+private struct NeedsRestockingRow: View {
     let item: Item
     let locationName: String?
 
@@ -117,9 +104,18 @@ private struct RecentlyAddedRow: View {
                     Text(locationName)
                     Text("·")
                 }
-                Text("\(item.quantity) \(item.unit.displayLabel)")
-                Text("·")
-                Text(item.createdAt, style: .relative)
+                // The two reasons an item lands here render as a hint
+                // the user can scan without opening the detail. Both
+                // reasons show when both apply.
+                if item.quantity == 0 {
+                    Text("Out of stock")
+                }
+                if item.needsRestocking && item.quantity == 0 {
+                    Text("·")
+                }
+                if item.needsRestocking {
+                    Text("Flagged")
+                }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -130,7 +126,7 @@ private struct RecentlyAddedRow: View {
 #Preview {
     @Previewable @State var selectedItemID: Item.ID?
     NavigationStack {
-        RecentlyAddedView(selectedItemID: $selectedItemID)
+        NeedsRestockingView(selectedItemID: $selectedItemID)
     }
     .environment(\.repositories, .makePreview())
 }

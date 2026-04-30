@@ -25,6 +25,21 @@ struct AllItemsView: View {
                     ForEach(items) { item in
                         AllItemsRow(item: item, locationName: locationsByID[item.locationID]?.name)
                             .tag(item.id)
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                // Issue #16: cross-location restock
+                                // toggle. Uses the same partial-update
+                                // path as the per-location list so a
+                                // burst of taps doesn't race an
+                                // edit-form save.
+                                RestockSwipeButton(item: item) { newValue in
+                                    Task {
+                                        await toggleRestocking(
+                                            for: item.id,
+                                            to: newValue
+                                        )
+                                    }
+                                }
+                            }
                     }
                 }
                 .scrollContentBackground(.hidden)
@@ -58,6 +73,19 @@ struct AllItemsView: View {
             items = []
         }
         didLoad = true
+    }
+
+    /// Issue #16: persists the swipe-action toggle and reloads.
+    private func toggleRestocking(for id: Item.ID, to newValue: Bool) async {
+        do {
+            try await repositories.item.setNeedsRestocking(
+                id: id,
+                needsRestocking: newValue
+            )
+            await load()
+        } catch {
+            // Soft-fail — next remote-change tick reloads.
+        }
     }
 }
 

@@ -317,6 +317,7 @@ Smart Lists
   ▢ Expiring Soon       (items with expiresAt within 7 days, sorted soonest)
   ▢ All Items           (every item across every location, sorted by name)
   ▢ Recently Added      (items added in the last 14 days)
+  ▢ Needs Restocking    (items flagged for restock or out of stock — issue #16)
 
 Locations
   🥫 Kitchen Pantry
