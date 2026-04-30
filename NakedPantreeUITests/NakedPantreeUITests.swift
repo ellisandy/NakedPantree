@@ -1,5 +1,6 @@
 import XCTest
 
+@MainActor
 final class NakedPantreeUITests: XCTestCase {
     func testAppLaunches() throws {
         let app = XCUIApplication()

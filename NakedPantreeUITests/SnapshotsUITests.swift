@@ -25,6 +25,7 @@ import XCTest
 ///
 /// See [issue #12](https://github.com/ellisandy/NakedPantree/issues/12)
 /// for the larger pipeline this slots into.
+@MainActor
 final class SnapshotsUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -163,7 +164,7 @@ final class SnapshotsUITests: XCTestCase {
     private func waitForColumn(
         _ app: XCUIApplication,
         navbar identifier: String,
-        file: StaticString = #file,
+        file: StaticString = #filePath,
         line: UInt = #line
     ) {
         XCTAssertTrue(

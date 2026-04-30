@@ -21,6 +21,7 @@ import XCTest
 /// either render its participant UI or surface its own error UI;
 /// either way it produces accessibility children that XCUITest can
 /// see. A genuinely blank sheet (the bug) produces none.
+@MainActor
 final class SharingUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
