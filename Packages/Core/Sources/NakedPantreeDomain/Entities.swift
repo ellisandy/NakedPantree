@@ -54,6 +54,14 @@ public struct Item: Sendable, Hashable, Identifiable {
     public var unit: Unit
     public var expiresAt: Date?
     public var notes: String?
+    /// Issue #16: user-flagged restock signal. Survives sync. Set from a
+    /// detail-view toggle or a swipe action on any items list. Items with
+    /// `needsRestocking == true` *or* `quantity == 0` surface in the
+    /// "Needs Restocking" smart list — see `ItemRepository.needsRestocking(in:)`.
+    /// Default `false` so existing rows in CloudKit / Core Data parse
+    /// without migration; the new column writes `false` on insert and
+    /// the in-memory store seeds it the same way.
+    public var needsRestocking: Bool
     public let createdAt: Date
     public var updatedAt: Date
 
@@ -65,6 +73,7 @@ public struct Item: Sendable, Hashable, Identifiable {
         unit: Unit = .count,
         expiresAt: Date? = nil,
         notes: String? = nil,
+        needsRestocking: Bool = false,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -75,6 +84,7 @@ public struct Item: Sendable, Hashable, Identifiable {
         self.unit = unit
         self.expiresAt = expiresAt
         self.notes = notes
+        self.needsRestocking = needsRestocking
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

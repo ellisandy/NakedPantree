@@ -124,6 +124,39 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
         }
     }
 
+    public func setNeedsRestocking(id: Item.ID, needsRestocking: Bool) async throws {
+        // Issue #16: partial update — touches `needsRestocking` and
+        // `updatedAt` only. Mirrors `updateQuantity`'s race-prevention
+        // shape: a swipe action or detail toggle flipping a single bool
+        // shouldn't read-modify-write a whole `Item` and risk clobbering
+        // a concurrent edit-form save of `name` / `expiresAt`.
+        try await container.performBackgroundTaskWithDefaults { context in
+            guard let row = try Self.fetchItemRow(id: id, in: context) else { return }
+            row.setValue(needsRestocking, forKey: "needsRestocking")
+            row.setValue(Date(), forKey: "updatedAt")
+            try context.save()
+        }
+    }
+
+    public func needsRestocking(in householdID: Household.ID) async throws -> [Item] {
+        // Issue #16: union of explicitly-flagged and implicitly-out-of-stock
+        // items in the household. The OR predicate runs at the Core Data
+        // layer so the fetch returns only matching rows — no in-memory
+        // filtering. Sort by name to match `allItems(in:)`'s order.
+        try await container.performBackgroundTaskWithDefaults { context in
+            let request = NSFetchRequest<NSManagedObject>(entityName: "ItemEntity")
+            request.predicate = NSPredicate(
+                format:
+                    "location.household.id == %@ AND (needsRestocking == YES OR quantity == 0)",
+                householdID as CVarArg
+            )
+            request.sortDescriptors = [
+                NSSortDescriptor(key: "name", ascending: true)
+            ]
+            return try context.fetch(request).map(Self.makeItem)
+        }
+    }
+
     public func delete(id: Item.ID) async throws {
         try await container.performBackgroundTaskWithDefaults { context in
             guard let row = try Self.fetchItemRow(id: id, in: context) else { return }
@@ -143,6 +176,7 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
         row.setValue(item.unit.rawValue, forKey: "unitRaw")
         row.setValue(item.expiresAt, forKey: "expiresAt")
         row.setValue(item.notes, forKey: "notes")
+        row.setValue(item.needsRestocking, forKey: "needsRestocking")
         row.setValue(item.createdAt, forKey: "createdAt")
         row.setValue(stampUpdatedAt ? Date() : item.updatedAt, forKey: "updatedAt")
     }
@@ -205,6 +239,10 @@ public final class CoreDataItemRepository: ItemRepository, @unchecked Sendable {
             unit: Unit(rawValue: row.value(forKey: "unitRaw") as? String ?? "count"),
             expiresAt: row.value(forKey: "expiresAt") as? Date,
             notes: row.value(forKey: "notes") as? String,
+            // Issue #16: defaults to `false` for rows persisted before
+            // the column existed (CloudKit additive migration — the
+            // attribute is optional with `defaultValueString="NO"`).
+            needsRestocking: row.value(forKey: "needsRestocking") as? Bool ?? false,
             createdAt: row.value(forKey: "createdAt") as? Date ?? Date(),
             updatedAt: row.value(forKey: "updatedAt") as? Date ?? Date()
         )

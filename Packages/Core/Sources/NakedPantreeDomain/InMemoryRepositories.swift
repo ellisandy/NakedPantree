@@ -200,6 +200,29 @@ public actor InMemoryItemRepository: ItemRepository {
         items[id] = existing
     }
 
+    public func setNeedsRestocking(id: Item.ID, needsRestocking: Bool) async throws {
+        // Issue #16: partial update — touch only `needsRestocking`
+        // and `updatedAt`. Same actor-serialized atomicity as
+        // `updateQuantity`.
+        guard var existing = items[id] else { return }
+        existing.needsRestocking = needsRestocking
+        existing.updatedAt = Date()
+        items[id] = existing
+    }
+
+    public func needsRestocking(in householdID: Household.ID) async throws -> [Item] {
+        var results: [Item] = []
+        for item in items.values where item.needsRestocking || item.quantity == 0 {
+            let location = try await locationLookup(item.locationID)
+            if location?.householdID == householdID {
+                results.append(item)
+            }
+        }
+        return results.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+
     public func delete(id: Item.ID) async throws {
         items.removeValue(forKey: id)
     }

@@ -121,6 +121,22 @@ public protocol ItemRepository: Sendable {
     /// schedule and persist) — same shape as `update(_:)`'s
     /// silent-skip semantics on a missing row.
     func updateQuantity(id: Item.ID, quantity: Int32) async throws
+    /// Partial update that touches only `needsRestocking` (and stamps
+    /// `updatedAt`), leaving every other attribute untouched. Issue
+    /// #16: same race-prevention shape as `updateQuantity` — the
+    /// detail-view toggle and the swipe action both flip a single
+    /// boolean, and a full fetch-modify-save round-trip would race
+    /// concurrent edit-form saves of `name` / `expiresAt`.
+    ///
+    /// No-op if the item doesn't exist (deleted between gesture and
+    /// persist) — same shape as `update(_:)`'s silent-skip semantics.
+    func setNeedsRestocking(id: Item.ID, needsRestocking: Bool) async throws
+    /// Items in the household that need restocking — flagged manually
+    /// (`needsRestocking == true`) or implicitly out-of-stock
+    /// (`quantity == 0`). Backs the "Needs Restocking" smart list
+    /// (issue #16). Sorted by name for stable list output, matching
+    /// `allItems(in:)`.
+    func needsRestocking(in householdID: Household.ID) async throws -> [Item]
     func delete(id: Item.ID) async throws
 }
 
