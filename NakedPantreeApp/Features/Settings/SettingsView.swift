@@ -44,6 +44,15 @@ struct SettingsView: View {
     @State private var isPreparingShare = false
     @State private var shareError: ShareErrorAlert?
 
+    /// Build #52 bug fix: `LocationsSection`'s create/edit form sheet
+    /// state lives here (not in the section) so the `.sheet(item:)`
+    /// modifier can attach at the NavigationStack level. Attaching
+    /// the form sheet inside a Form's Section caused SwiftUI's
+    /// presentation-context resolution to dismiss the entire sheet
+    /// stack the moment the form tried to appear. See the section's
+    /// own type doc for the full root-cause writeup.
+    @State private var locationFormMode: LocationFormView.Mode?
+
     /// Trace for #90 (blank Share Household sheet on TestFlight).
     /// Same subsystem/category as `CloudSharingControllerView` and
     /// `CloudHouseholdSharingService` so a single Console.app filter
@@ -61,7 +70,10 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 householdSection
-                LocationsSection(householdID: household?.id)
+                LocationsSection(
+                    householdID: household?.id,
+                    formMode: $locationFormMode
+                )
                 expiryRemindersSection
             }
             .scrollContentBackground(.hidden)
@@ -71,6 +83,21 @@ struct SettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
+                }
+            }
+            // Build #52 fix: present the LocationsSection's
+            // create/edit form here, at the NavigationStack level,
+            // rather than from inside the Form's Section. Section-
+            // attached `.sheet(item:)` made SwiftUI dismiss the
+            // entire sheet stack on present. The section flips
+            // `locationFormMode` via its parent-owned binding; this
+            // modifier renders the actual sheet.
+            .sheet(item: $locationFormMode) { mode in
+                LocationFormView(mode: mode) {
+                    // No-op — `LocationsSection.onChange(of: formMode)`
+                    // catches the dismiss edge and triggers its own
+                    // reload. Keeping that local to the section
+                    // avoids threading another callback through.
                 }
             }
             .sheet(item: $preparedShare) { prepared in

@@ -8,14 +8,26 @@ import SwiftUI
 /// "add location", and locations are a rare-action surface that
 /// doesn't deserve top-level real estate.
 ///
-/// The sibling issue (#132) repurposes the freed sidebar `+` slot as
-/// a "New Item" entry point. Until #132 lands, the sidebar has no
-/// primary toolbar action — that's the documented in-between state.
+/// **Why `formMode` is a parent-owned `@Binding`:** in the original
+/// implementation this section attached `.sheet(item: $formMode)`
+/// directly. That presented inside the outer Settings sheet's
+/// content, deep under a Form's Section. SwiftUI's presentation
+/// context resolution couldn't tell which sheet was being asked
+/// to present from a Section-attached `.sheet`, and would dismiss
+/// the entire sheet stack — including the parent Settings sheet —
+/// the moment the form tried to appear. Build #52 reproduced this
+/// every time. Fix: lift `formMode` and the `.sheet(item:)`
+/// modifier to `SettingsView`'s NavigationStack, where the
+/// presentation context is unambiguous. The section keeps its
+/// own state for delete-confirmation (a `confirmationDialog`,
+/// which is action-sheet-shaped and doesn't have the same
+/// presentation-context bug).
 ///
-/// **Reload semantics:** the `LocationFormView` callback and the
-/// delete handler both reload by re-fetching `locations(in:)` on
-/// completion. The sibling sidebar reloads on Settings sheet dismiss
-/// (no shared store needed, no cross-component callback).
+/// **Reload semantics:** when the form sheet dismisses (whether
+/// the user saved or cancelled), `formMode` flips back to nil.
+/// `.onChange(of: formMode)` catches that edge and re-fetches the
+/// locations list — that's why the parent doesn't need to thread
+/// an `onSaved` callback through.
 ///
 /// **Why a standalone view:** extracting this from `SettingsView`
 /// makes the load / form-callback / reload cycle unit-testable
@@ -29,10 +41,14 @@ struct LocationsSection: View {
     /// that case rather than a stale list against the wrong household.
     let householdID: Household.ID?
 
+    /// Form-mode state owned by `SettingsView` — see the type doc for
+    /// why this is a binding rather than `@State`. The section sets
+    /// it on Add / Edit taps; the parent renders the actual sheet.
+    @Binding var formMode: LocationFormView.Mode?
+
     @Environment(\.repositories) private var repositories
 
     @State private var locations: [Location] = []
-    @State private var formMode: LocationFormView.Mode?
     @State private var pendingDelete: Location?
     @State private var loadError: Error?
 
@@ -71,11 +87,6 @@ struct LocationsSection: View {
         } header: {
             Text("Locations")
         }
-        .sheet(item: $formMode) { mode in
-            LocationFormView(mode: mode) {
-                Task { await reload() }
-            }
-        }
         .confirmationDialog(
             deleteConfirmationTitle,
             isPresented: deleteDialogBinding,
@@ -92,6 +103,15 @@ struct LocationsSection: View {
             Text("This also removes every item inside it.")
         }
         .task(id: householdID) { await reload() }
+        // Reload when the parent-rendered form sheet dismisses
+        // (either via save or cancel — both flip formMode back to
+        // nil). This is the missing wire that the lifted `.sheet`
+        // would otherwise need an `onSaved` callback to do.
+        .onChange(of: formMode) { _, newValue in
+            if newValue == nil {
+                Task { await reload() }
+            }
+        }
     }
 
     private var deleteConfirmationTitle: String {
