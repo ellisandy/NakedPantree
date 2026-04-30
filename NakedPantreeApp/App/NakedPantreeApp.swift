@@ -92,7 +92,9 @@ struct NakedPantreeApp: App {
             // can import shared records when a recipient taps an
             // invite. The delegate is instantiated by the system before
             // this init runs, so a static var is the simplest seam.
-            NakedPantreeAppDelegate.shareAcceptance = CloudShareAcceptance(container: container)
+            NakedPantreeAppDelegate.wireShareAcceptance(
+                CloudShareAcceptance(container: container)
+            )
             // Phase 9.3: persisted reminder time, constructed before
             // the scheduler so it can read `settings.hourOfDay` /
             // `.minute` when scheduling and when bundling same-day
@@ -107,7 +109,7 @@ struct NakedPantreeApp: App {
         // service. Same static-var pattern as `shareAcceptance` —
         // delegate construction precedes app init, so the seam is a
         // post-hoc handoff.
-        NakedPantreeAppDelegate.notificationRouting = routing
+        NakedPantreeAppDelegate.wireNotificationRouting(routing)
     }
 
     var body: some Scene {
