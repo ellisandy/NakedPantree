@@ -33,7 +33,16 @@ struct SettingsView: View {
     /// a neutral placeholder in that case rather than blocking the
     /// whole screen — the share action doesn't depend on the name.
     @State private var household: Household?
-    @State private var isPresentingShareSheet = false
+
+    /// Issue #90: share preparation state machine. Prep runs *before*
+    /// the sheet presents so `UICloudSharingController(share:container:)`
+    /// can be constructed against an already-resolved share — the
+    /// non-deprecated path. `preparedShare != nil` drives the sheet;
+    /// `isPreparingShare` drives the spinner; `shareError` drives the
+    /// alert.
+    @State private var preparedShare: ShareSheetPreparation.PreparedShare?
+    @State private var isPreparingShare = false
+    @State private var shareError: ShareErrorAlert?
 
     /// Trace for #90 (blank Share Household sheet on TestFlight).
     /// Same subsystem/category as `CloudSharingControllerView` and
@@ -63,31 +72,25 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .sheet(isPresented: $isPresentingShareSheet) {
-                if let household, let sharing = householdSharing {
-                    CloudSharingControllerView(
-                        householdID: household.id,
-                        sharing: sharing,
-                        onCompletion: { isPresentingShareSheet = false }
-                    )
-                    .ignoresSafeArea()
-                } else {
-                    // Diagnostic fallback for #90. If the sheet
-                    // presents but the if-let above fails, the user
-                    // sees a blank sheet — exactly the reported
-                    // symptom. The .onAppear log captures which input
-                    // was nil so the bug surfaces in Console without
-                    // needing to attach a debugger.
-                    Color.clear
-                        .onAppear {
-                            let householdState = household != nil ? "set" : "nil"
-                            let sharingState = householdSharing != nil ? "set" : "nil"
-                            Self.logger.error(
-                                // swiftlint:disable:next line_length
-                                "share sheet presented but if-let failed — household=\(householdState, privacy: .public) sharing=\(sharingState, privacy: .public)"
-                            )
-                        }
-                }
+            .sheet(item: $preparedShare) { prepared in
+                // Issue #90: by the time this closure fires, the share
+                // is already a real `CKShare` resolved by
+                // `ShareSheetPreparation`. The controller uses
+                // `init(share:container:)` and renders participant UI
+                // immediately — no more lazy preparation handler.
+                CloudSharingControllerView(
+                    share: prepared.share,
+                    container: prepared.container,
+                    onCompletion: { preparedShare = nil }
+                )
+                .ignoresSafeArea()
+            }
+            .alert(item: $shareError) { wrapper in
+                Alert(
+                    title: Text("Couldn't share"),
+                    message: Text(wrapper.message),
+                    dismissButton: .default(Text("OK"))
+                )
             }
             .task { await loadHousehold() }
         }
@@ -121,12 +124,19 @@ struct SettingsView: View {
                         // swiftlint:disable:next line_length
                         "share button tapped — household=\(householdState, privacy: .public) sharing=\(sharingState, privacy: .public)"
                     )
-                    isPresentingShareSheet = true
+                    Task { await prepareShareForPresentation() }
                 } label: {
-                    Label("Share Household", systemImage: "person.crop.circle.badge.plus")
+                    HStack {
+                        Label("Share Household", systemImage: "person.crop.circle.badge.plus")
+                        if isPreparingShare {
+                            Spacer()
+                            ProgressView()
+                                .accessibilityIdentifier("settings.shareHousehold.spinner")
+                        }
+                    }
                 }
                 .accessibilityIdentifier("settings.shareHousehold")
-                .disabled(household == nil)
+                .disabled(household == nil || isPreparingShare)
             }
         } header: {
             Text("Household")
@@ -185,6 +195,46 @@ struct SettingsView: View {
             household = nil
         }
     }
+
+    /// Issue #90: kicks off `ShareSheetPreparation.prepareShare`,
+    /// driving the spinner / sheet / alert state. Idempotent against
+    /// the existing share — `CloudHouseholdSharingService` returns the
+    /// same `CKShare` on subsequent calls so a tap → dismiss → tap
+    /// sequence reuses the prepared share rather than minting a new
+    /// one. The orphan-share trade-off (a single tap before any
+    /// invite leaves a `CKShare` on iCloud) is accepted; a follow-up
+    /// issue covers cleaning up empty shares on dismiss if it ever
+    /// matters.
+    @MainActor
+    private func prepareShareForPresentation() async {
+        guard let household, let sharing = householdSharing else {
+            Self.logger.error(
+                // swiftlint:disable:next line_length
+                "prepareShareForPresentation: missing household or sharing service — household=\(household != nil ? "set" : "nil", privacy: .public) sharing=\(householdSharing != nil ? "set" : "nil", privacy: .public)"
+            )
+            return
+        }
+        isPreparingShare = true
+        defer { isPreparingShare = false }
+
+        let result = await ShareSheetPreparation.prepareShare(
+            for: household.id,
+            using: sharing
+        )
+        switch result {
+        case .success(let payload):
+            preparedShare = payload
+        case .failure(let error):
+            shareError = ShareErrorAlert(message: error.localizedDescription)
+        }
+    }
+}
+
+/// `Identifiable` wrapper so `.alert(item:)` can drive on a single
+/// state binding rather than a paired `isPresented` + `errorMessage`.
+struct ShareErrorAlert: Identifiable {
+    let id = UUID()
+    let message: String
 }
 
 #Preview("Default 9:00 AM") {

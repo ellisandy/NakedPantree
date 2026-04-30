@@ -6,30 +6,35 @@ import Testing
 @testable import NakedPantreeDomain
 @testable import NakedPantreePersistence
 
-/// Coverage for `CloudSharingControllerView.runPrepareShareWithTimeout` —
-/// the `withTaskGroup` race that backs the #90 timeout safety net. A
-/// regression here would silently break the "blank sheet eventually
-/// surfaces an error" guarantee, so the race wins on three axes are
-/// each pinned down:
+/// Coverage for `ShareSheetPreparation.prepareShare` — the
+/// `withTaskGroup` race that backs the #90 timeout safety net. Pinned
+/// against the three race outcomes:
 ///
 /// - Service resolves before timeout → `.success`
-/// - Service hangs longer than timeout → `.failure(SharingTimeoutError)`
+/// - Service hangs longer than timeout → `.failure(TimeoutError)`
 /// - Service throws before timeout → `.failure(<underlying error>)`
+///
+/// **Pre-Phase-11 history.** This logic used to live on
+/// `CloudSharingControllerView.runPrepareShareWithTimeout`, paired
+/// with the now-deprecated `UICloudSharingController(preparationHandler:)`.
+/// Issue #90: that init silently fails to invoke its preparation
+/// handler on iOS 17+/26, so the race was moved up to
+/// `ShareSheetPreparation` and the controller now uses
+/// `init(share:container:)` against an already-resolved share. Tests
+/// follow the logic; their shape is otherwise unchanged.
 ///
 /// Each test uses a small timeout (~100ms) so the suite finishes
 /// fast; the production default of 60s is overridden via the
 /// `timeout:` parameter.
-@Suite("CloudSharingControllerView timeout race")
-struct CloudSharingControllerViewTimeoutRaceTests {
+@Suite("ShareSheetPreparation timeout race")
+struct ShareSheetPreparationTimeoutRaceTests {
     @Test("Service resolves before timeout — returns .success")
-    @MainActor
     func happyPath() async throws {
-        let view = CloudSharingControllerView(
-            householdID: UUID(),
-            sharing: StubHouseholdSharingService(),
-            onCompletion: {}
+        let result = await ShareSheetPreparation.prepareShare(
+            for: UUID(),
+            using: StubHouseholdSharingService(),
+            timeout: .seconds(5)
         )
-        let result = await view.runPrepareShareWithTimeout(timeout: .seconds(5))
         switch result {
         case .success:
             break
@@ -38,35 +43,31 @@ struct CloudSharingControllerViewTimeoutRaceTests {
         }
     }
 
-    @Test("Service hangs longer than timeout — returns SharingTimeoutError")
-    @MainActor
+    @Test("Service hangs longer than timeout — returns TimeoutError")
     func timeoutWins() async throws {
-        let view = CloudSharingControllerView(
-            householdID: UUID(),
-            sharing: HangingSharingService(),
-            onCompletion: {}
+        let result = await ShareSheetPreparation.prepareShare(
+            for: UUID(),
+            using: HangingSharingService(),
+            timeout: .milliseconds(100)
         )
-        let result = await view.runPrepareShareWithTimeout(timeout: .milliseconds(100))
         switch result {
         case .success:
             Issue.record("Expected timeout, got success")
         case .failure(let error):
             #expect(
-                error is CloudSharingControllerView.SharingTimeoutError,
-                "Expected SharingTimeoutError, got: \(type(of: error))"
+                error is ShareSheetPreparation.TimeoutError,
+                "Expected TimeoutError, got: \(type(of: error))"
             )
         }
     }
 
     @Test("Service throws — returns the underlying error, not a timeout")
-    @MainActor
     func errorPropagates() async throws {
-        let view = CloudSharingControllerView(
-            householdID: UUID(),
-            sharing: ThrowingSharingService(),
-            onCompletion: {}
+        let result = await ShareSheetPreparation.prepareShare(
+            for: UUID(),
+            using: ThrowingSharingService(),
+            timeout: .seconds(5)
         )
-        let result = await view.runPrepareShareWithTimeout(timeout: .seconds(5))
         switch result {
         case .success:
             Issue.record("Expected failure, got success")
@@ -84,9 +85,9 @@ struct CloudSharingControllerViewTimeoutRaceTests {
 /// Stub that hangs forever via cancellable `Task.sleep`. The
 /// surrounding `withTaskGroup.cancelAll()` will cancel this task once
 /// the timeout sibling wins — `Task.sleep` throws `CancellationError`,
-/// the `do/catch` in `runPrepareShareWithTimeout` converts it to
-/// `.failure(CancellationError)`, but that result is the *loser* and
-/// is discarded by the group's `next()`-then-cancel pattern.
+/// the `do/catch` in `prepareShare` converts it to `.failure`, but
+/// that result is the *loser* and is discarded by the group's
+/// `next()`-then-cancel pattern.
 private struct HangingSharingService: HouseholdSharingService {
     func prepareShare(
         for householdID: UUID
