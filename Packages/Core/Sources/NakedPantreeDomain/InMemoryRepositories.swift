@@ -61,11 +61,50 @@ public actor InMemoryLocationRepository: LocationRepository {
     }
 
     public func create(_ location: Location) async throws {
+        // Issue #133: enforce per-household uniqueness with the
+        // normalized comparison declared in `LocationRepository`.
+        // `excluding` is nil because every location in the household
+        // is a potential collision on create (the new row has no
+        // existing id to skip).
+        try requireUniqueName(
+            location.name,
+            in: location.householdID,
+            excluding: nil
+        )
         locations[location.id] = location
     }
 
     public func update(_ location: Location) async throws {
+        // `excluding: location.id` lets the caller rename the row to
+        // its own current name (or change kind/sortOrder without
+        // touching the name) — same row's old name doesn't count as
+        // a duplicate.
+        try requireUniqueName(
+            location.name,
+            in: location.householdID,
+            excluding: location.id
+        )
         locations[location.id] = location
+    }
+
+    /// Fast-path uniqueness check used by `create` and `update`.
+    /// Throws `LocationRepositoryError.duplicateName` when the
+    /// normalized name matches any location in the same household
+    /// other than the one identified by `excluding`.
+    private func requireUniqueName(
+        _ name: String,
+        in householdID: Household.ID,
+        excluding selfID: Location.ID?
+    ) throws {
+        let target = normalizedLocationName(name)
+        let collision = locations.values.first { existing in
+            existing.householdID == householdID
+                && existing.id != selfID
+                && normalizedLocationName(existing.name) == target
+        }
+        if collision != nil {
+            throw LocationRepositoryError.duplicateName(name: name)
+        }
     }
 
     public func delete(id: Location.ID) async throws {
