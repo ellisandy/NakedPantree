@@ -98,7 +98,13 @@ private struct NeedsRestockingRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(item.name).font(.body)
+            HStack(spacing: 8) {
+                Text(item.name).font(.body)
+                // Issue #156: shared expired badge across every list.
+                // An expired item that's also flagged for restock is
+                // exactly the case the user wants surfaced in red.
+                ItemExpiryBadge(expiresAt: item.expiresAt)
+            }
             HStack(spacing: 8) {
                 if let locationName {
                     Text(locationName)

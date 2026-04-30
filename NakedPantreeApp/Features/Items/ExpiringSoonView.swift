@@ -121,9 +121,7 @@ private struct ExpiringSoonRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Text(item.name).font(.body)
-                if isExpired {
-                    expiredBadge
-                }
+                ItemExpiryBadge(expiresAt: item.expiresAt)
             }
             HStack(spacing: 8) {
                 if let locationName {
@@ -141,24 +139,6 @@ private struct ExpiringSoonRow: View {
         }
     }
 
-    private var isExpired: Bool {
-        guard let expiresAt = item.expiresAt else { return false }
-        return expiresAt < Date()
-    }
-
-    /// Icon + text — never color alone, per `DESIGN_GUIDELINES.md` §6
-    /// accessibility rule. The badge stays compact so the row layout
-    /// reads at a glance.
-    @ViewBuilder
-    private var expiredBadge: some View {
-        Label("Expired", systemImage: "exclamationmark.triangle.fill")
-            .labelStyle(.titleAndIcon)
-            .font(.caption.bold())
-            .foregroundStyle(.red)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Color.red.opacity(0.12), in: Capsule())
-    }
 }
 
 #Preview {

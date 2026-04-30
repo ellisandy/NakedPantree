@@ -238,8 +238,15 @@ private struct ItemRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(item.name)
-                .font(.body)
+            HStack(spacing: 8) {
+                Text(item.name)
+                    .font(.body)
+                // Issue #156: surface expired state on every list, not
+                // just Expiring Soon. Renders nothing when the item is
+                // not expired so the row layout stays unchanged for
+                // the common case.
+                ItemExpiryBadge(expiresAt: item.expiresAt)
+            }
             HStack(spacing: 8) {
                 Text("\(item.quantity) \(item.unit.displayLabel)")
                 if let expiresAt = item.expiresAt {
