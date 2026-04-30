@@ -58,8 +58,35 @@
     <array>
         <string>remote-notification</string>
     </array>
+    <!--
+        Issue #87 — UIKit's "Update the Info.plist: Launch screens
+        will soon be required" runtime warning was firing because
+        the previous value was an empty dict, which iOS treats as
+        "no launch screen configured". Apple is moving toward
+        making `UILaunchScreen` mandatory for App Store submission,
+        so this is a release blocker as much as a polish item.
+
+        Color: `BrandWarmCream` from `Assets.xcassets/Brand/`. The
+        catalog's `Brand` group has `provides-namespace: false` so
+        the launch screen resolves the bare name without needing
+        `Brand/BrandWarmCream`. This matches the in-app cream
+        background of `LaunchView` (Phase 8.2 splash) — no flash
+        on handoff between the OS launch screen and the first
+        SwiftUI frame.
+
+        No `UIImageName` yet — the brand wordmark exists as text in
+        `LaunchView`, not as an asset image, and the launch screen
+        takes a static image not text. Adding an image is a polish
+        follow-up; the cream background alone satisfies the
+        requirement and avoids the blank-window flash.
+    -->
     <key>UILaunchScreen</key>
-    <dict/>
+    <dict>
+        <key>UIColorName</key>
+        <string>BrandWarmCream</string>
+        <key>UIImageRespectsSafeAreaInsets</key>
+        <true/>
+    </dict>
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
