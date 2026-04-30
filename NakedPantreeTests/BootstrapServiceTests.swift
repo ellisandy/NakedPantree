@@ -156,4 +156,101 @@ struct BootstrapServiceTests {
 private actor WaitCounter {
     private(set) var value = 0
     func increment() { value += 1 }
+
+    /// Returns the pre-increment value so callers can dispatch on
+    /// "this is the Nth call" without observing their own bump.
+    func snapshotAndIncrement() -> Int {
+        let snapshot = value
+        value += 1
+        return snapshot
+    }
+}
+
+@Suite("BootstrapService — issue #110 multi-device race")
+struct BootstrapServiceMultiDeviceTests {
+    /// Models a second device joining an iCloud account: the household
+    /// arrives via the first remote-change tick, and a "Kitchen"
+    /// location arrives on a later remote-change tick. Pre-#110,
+    /// bootstrap saw "household synced, locations empty" between the
+    /// two ticks and seeded a Kitchen — duplicating once the synced
+    /// Kitchen landed. Post-#110, the second wait gives locations
+    /// time to land before bootstrap decides.
+    @Test("Two-stage sync: household arrives, then locations — no duplicate Kitchen")
+    func locationsArriveAfterHouseholdNoDuplicate() async throws {
+        let household = InMemoryHouseholdRepository()
+        let location = InMemoryLocationRepository()
+        let preExistingHousehold = Household(name: "My Pantry")
+        let preExistingKitchen = Location(
+            householdID: preExistingHousehold.id,
+            name: "Kitchen",
+            kind: .pantry
+        )
+
+        // Two-stage waiter: first call seeds the household, second call
+        // seeds the Kitchen. Mirrors the real CloudKit pattern of
+        // separate transactions per record-zone change.
+        let callCount = WaitCounter()
+        let waitForRemoteChange: @Sendable () async -> Void = {
+            let invocation = await callCount.snapshotAndIncrement()
+            try? await Task.sleep(for: .milliseconds(50))
+            switch invocation {
+            case 0:
+                try? await household.update(preExistingHousehold)
+            case 1:
+                try? await location.create(preExistingKitchen)
+            default:
+                break
+            }
+        }
+
+        let service = BootstrapService(
+            household: household,
+            location: location,
+            waitForRemoteChange: waitForRemoteChange,
+            syncWaitTimeout: .seconds(5)
+        )
+        try await service.bootstrapIfNeeded()
+
+        let locations = try await location.locations(in: preExistingHousehold.id)
+        #expect(locations.count == 1, "Bootstrap must not duplicate the synced Kitchen.")
+        #expect(locations.first?.id == preExistingKitchen.id)
+
+        // Both wait calls fired: first to bring down the household,
+        // second to give locations time to settle.
+        let waits = await callCount.value
+        #expect(waits == 2, "Bootstrap should wait twice when household arrives via sync.")
+    }
+
+    /// If the second wait elapses without locations arriving, bootstrap
+    /// proceeds to seed — assumes the user really has zero locations
+    /// (e.g. they deleted them all on the originating device).
+    @Test("Two-stage sync: household arrives, locations don't — bootstrap seeds Kitchen")
+    func locationsNeverArriveBootstrapSeeds() async throws {
+        let household = InMemoryHouseholdRepository()
+        let location = InMemoryLocationRepository()
+        let preExistingHousehold = Household(name: "My Pantry")
+
+        let callCount = WaitCounter()
+        let waitForRemoteChange: @Sendable () async -> Void = {
+            let invocation = await callCount.snapshotAndIncrement()
+            try? await Task.sleep(for: .milliseconds(20))
+            if invocation == 0 {
+                try? await household.update(preExistingHousehold)
+            }
+            // Subsequent calls intentionally do nothing — locations
+            // never sync in this test scenario.
+        }
+
+        let service = BootstrapService(
+            household: household,
+            location: location,
+            waitForRemoteChange: waitForRemoteChange,
+            syncWaitTimeout: .milliseconds(100)
+        )
+        try await service.bootstrapIfNeeded()
+
+        let locations = try await location.locations(in: preExistingHousehold.id)
+        #expect(locations.count == 1, "Bootstrap must seed Kitchen when no locations sync.")
+        #expect(locations.first?.name == "Kitchen")
+    }
 }
