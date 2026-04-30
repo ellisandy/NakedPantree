@@ -55,12 +55,54 @@ struct BootstrapService: Sendable {
     }
 
     func bootstrapIfNeeded() async throws {
-        let house = try await resolvePrivateHousehold()
-        let existing = try await location.locations(in: house.id)
+        let resolution = try await resolvePrivateHousehold()
+        var existing = try await location.locations(in: resolution.household.id)
+
+        // Issue #110: locations ride a separate CloudKit transaction
+        // from the household. When this device joins an iCloud account
+        // for the first time, the household can sync down on the first
+        // remote-change tick while locations are still in flight.
+        // Pre-#110, bootstrap saw "household exists, locations empty"
+        // and seeded a Kitchen — only for the synced Kitchen to land
+        // moments later, leaving the device with two. Do a second
+        // wait when the household came from sync, so the locations
+        // collection has a chance to settle before we decide to seed.
+        if existing.isEmpty && resolution.source == .syncedDown {
+            await waitForFirstRemoteChangeOrTimeout()
+            existing = try await location.locations(in: resolution.household.id)
+        }
+
         guard existing.isEmpty else { return }
         try await location.create(
-            Location(householdID: house.id, name: "Kitchen", kind: .pantry)
+            Location(householdID: resolution.household.id, name: "Kitchen", kind: .pantry)
         )
+    }
+
+    /// Where the bootstrap obtained the private household — used by
+    /// `bootstrapIfNeeded` to decide whether to wait an extra tick
+    /// for locations to sync (issue #110).
+    enum HouseholdSource: Equatable {
+        /// Already in the local private store at launch — idempotent
+        /// re-bootstrap, or a device whose CloudKit sync has already
+        /// landed before launch. Locations are typically also already
+        /// present.
+        case localExisting
+        /// Arrived via the first remote-change tick — e.g. a second
+        /// device joining an iCloud account. Locations may still be
+        /// in flight; bootstrap waits one more tick before deciding
+        /// to seed.
+        case syncedDown
+        /// We just created it via `ensurePrivateHousehold` — first
+        /// launch ever (or offline / signed-out). No remote locations
+        /// to wait for; seed the Kitchen now.
+        case freshlyCreated
+    }
+
+    /// Outcome of `resolvePrivateHousehold` — the resolved household
+    /// plus where it came from.
+    struct HouseholdResolution: Equatable {
+        let household: Household
+        let source: HouseholdSource
     }
 
     /// Decides which household this device should bootstrap into.
@@ -74,15 +116,16 @@ struct BootstrapService: Sendable {
     ///    sync brought a household down, return it.
     /// 3. Still empty after the wait: this really is first launch
     ///    ever (or offline / signed-out), so create one.
-    private func resolvePrivateHousehold() async throws -> Household {
+    private func resolvePrivateHousehold() async throws -> HouseholdResolution {
         if let existing = try await household.existingPrivateHousehold() {
-            return existing
+            return HouseholdResolution(household: existing, source: .localExisting)
         }
         await waitForFirstRemoteChangeOrTimeout()
         if let existing = try await household.existingPrivateHousehold() {
-            return existing
+            return HouseholdResolution(household: existing, source: .syncedDown)
         }
-        return try await household.ensurePrivateHousehold()
+        let created = try await household.ensurePrivateHousehold()
+        return HouseholdResolution(household: created, source: .freshlyCreated)
     }
 
     /// Suspends until either the injected `waitForRemoteChange` closure
