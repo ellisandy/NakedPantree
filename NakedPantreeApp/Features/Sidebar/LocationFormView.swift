@@ -195,7 +195,7 @@ struct LocationFormView: View {
             )
             onSaved()
             dismiss()
-        } catch let LocationRepositoryError.duplicateName(collidingName) {
+        } catch LocationRepositoryError.duplicateName(let collidingName) {
             // Issue #133: the repository caught a duplicate that the
             // local snapshot missed (e.g. CloudKit-sync race). Surface
             // the same field-scoped copy as the live check so the
