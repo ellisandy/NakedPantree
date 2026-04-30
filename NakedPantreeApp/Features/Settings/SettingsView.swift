@@ -61,6 +61,7 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 householdSection
+                LocationsSection(householdID: household?.id)
                 expiryRemindersSection
             }
             .scrollContentBackground(.hidden)

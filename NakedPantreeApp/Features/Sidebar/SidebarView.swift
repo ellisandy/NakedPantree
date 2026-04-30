@@ -3,16 +3,21 @@ import SwiftUI
 
 /// Two-section sidebar from `ARCHITECTURE.md` §7. Smart Lists are the
 /// fixed top section; Locations is data-driven from `LocationRepository`.
+///
+/// **Issue #131:** location create / edit / delete affordances moved
+/// out of the sidebar into Settings. Beta testers consistently misread
+/// the sidebar's `+` as "add item" rather than "add location", and
+/// locations are a rare-action surface. The toolbar now only owns the
+/// Settings entry point until #132 repurposes the freed primary slot
+/// as a "New Item" entry. The sidebar keeps the locations list for
+/// navigation; mutations live exclusively in Settings.
 struct SidebarView: View {
     @Binding var selection: SidebarSelection?
     @Environment(\.repositories) private var repositories
     @Environment(\.remoteChangeMonitor) private var remoteChangeMonitor
 
     @State private var locations: [Location] = []
-    @State private var householdID: Household.ID?
     @State private var loadError: Error?
-    @State private var formMode: LocationFormView.Mode?
-    @State private var pendingDelete: Location?
     @State private var isPresentingSettings = false
 
     var body: some View {
@@ -30,8 +35,10 @@ struct SidebarView: View {
                     // Phase 6.4: icon + text for the empty-state row so
                     // the sidebar matches the rest of the app's empty-
                     // state pattern (`DESIGN_GUIDELINES.md` §10 / Phase 6
-                    // exit criterion).
-                    Label("No locations yet. Tap + to add one.", systemImage: "tray")
+                    // exit criterion). Issue #131 repointed the copy
+                    // away from the (removed) toolbar `+` toward the
+                    // gear icon — Settings now owns location creation.
+                    Label("No locations yet — tap the gear to add one.", systemImage: "tray")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
@@ -39,19 +46,6 @@ struct SidebarView: View {
                         Label(location.name, systemImage: location.kind.systemImage)
                             .tag(SidebarSelection.location(location.id))
                             .accessibilityIdentifier("sidebar.location.\(location.name)")
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    pendingDelete = location
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                                Button {
-                                    formMode = .edit(location)
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
-                                }
-                                .tint(.indigo)
-                            }
                     }
                 }
             }
@@ -60,20 +54,11 @@ struct SidebarView: View {
         .background(Color.surface)
         .navigationTitle("Naked Pantree")
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    if let householdID {
-                        formMode = .create(householdID: householdID)
-                    }
-                } label: {
-                    Label("New Location", systemImage: "plus")
-                }
-                .disabled(householdID == nil)
-            }
             // Phase 9.3 introduced the Settings entry point in the
             // secondary toolbar slot. Phase 10.1 (#60) folded household
-            // sharing into Settings, so this is now the sidebar's only
-            // secondary action. Always available — even in previews /
+            // sharing into Settings; #131 folded location management in
+            // alongside it, retiring the primary "New Location"
+            // toolbar item. Always available — even in previews /
             // tests, where the no-op `NotificationSettings` default
             // lets the screen render without a real UserDefaults
             // backing.
@@ -86,68 +71,43 @@ struct SidebarView: View {
                 .accessibilityIdentifier("settings.toolbar.entry")
             }
         }
-        .sheet(item: $formMode) { mode in
-            LocationFormView(mode: mode) {
-                Task { await reload() }
-            }
-        }
         .sheet(isPresented: $isPresentingSettings) {
             SettingsView()
         }
-        .confirmationDialog(
-            deleteConfirmationTitle,
-            isPresented: deleteDialogBinding,
-            titleVisibility: .visible,
-            presenting: pendingDelete
-        ) { location in
-            Button("Delete", role: .destructive) {
-                Task { await delete(location) }
-            }
-            Button("Cancel", role: .cancel) {
-                pendingDelete = nil
-            }
-        } message: { _ in
-            Text("This also removes every item inside it.")
-        }
+        // Cross-device reload: `RemoteChangeMonitor` skips local-author
+        // writes, so this only fires when another device (or a freshly-
+        // imported share) bumps the token.
         .task(id: remoteChangeMonitor.changeToken) { await reload() }
-    }
-
-    private var deleteConfirmationTitle: String {
-        if let pendingDelete {
-            return "Delete \(pendingDelete.name)?"
+        // Same-device reload: Settings now owns location create/edit/
+        // delete (#131), so the local-author skip above means the
+        // sidebar wouldn't otherwise reflect changes made in the
+        // sheet. Reload when Settings dismisses so the user comes
+        // back to a fresh list. If a deleted location was the active
+        // selection, snap back to All Items so the content column
+        // doesn't render against a stale ID.
+        .onChange(of: isPresentingSettings) { _, newValue in
+            guard !newValue else { return }
+            Task { await reloadAndReconcileSelection() }
         }
-        return ""
-    }
-
-    private var deleteDialogBinding: Binding<Bool> {
-        Binding(
-            get: { pendingDelete != nil },
-            set: { newValue in
-                if !newValue { pendingDelete = nil }
-            }
-        )
     }
 
     private func reload() async {
         do {
             let house = try await repositories.household.currentHousehold()
-            householdID = house.id
             locations = try await repositories.location.locations(in: house.id)
         } catch {
             loadError = error
         }
     }
 
-    private func delete(_ location: Location) async {
-        pendingDelete = nil
-        if case .location(let selectedID) = selection, selectedID == location.id {
+    /// Reload + drop the active selection if the user deleted the
+    /// currently-selected location from Settings.
+    private func reloadAndReconcileSelection() async {
+        await reload()
+        if case .location(let selectedID) = selection,
+            !locations.contains(where: { $0.id == selectedID })
+        {
             selection = .smartList(.allItems)
-        }
-        do {
-            try await repositories.location.delete(id: location.id)
-            await reload()
-        } catch {
-            loadError = error
         }
     }
 }
