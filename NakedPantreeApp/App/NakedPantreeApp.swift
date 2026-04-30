@@ -38,6 +38,10 @@ struct NakedPantreeApp: App {
                     .environment(\.remoteChangeMonitor, dependencies.remoteChangeMonitor)
                     .environment(\.accountStatusMonitor, dependencies.accountStatusMonitor)
                     .environment(\.householdSharing, dependencies.householdSharing)
+                    .environment(
+                        \.shareAcceptanceCoordinator,
+                        dependencies.shareAcceptanceCoordinator
+                    )
                     .environment(\.notificationScheduler, dependencies.notificationScheduler)
                     .environment(\.notificationRouting, dependencies.notificationRouting)
                     .environment(\.notificationSettings, dependencies.notificationSettings)

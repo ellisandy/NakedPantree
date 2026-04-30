@@ -123,6 +123,10 @@ struct LiveDependencies {
     let remoteChangeMonitor: RemoteChangeMonitor
     let accountStatusMonitor: AccountStatusMonitor
     let householdSharing: (any HouseholdSharingService)?
+    /// Issue #105: app-layer wrapper around `CloudShareAcceptance` that
+    /// routes accept errors into a user-visible alert. RootView observes
+    /// it via `\.shareAcceptanceCoordinator`.
+    let shareAcceptanceCoordinator: ShareAcceptanceCoordinator
     let notificationScheduler: NotificationScheduler
     let notificationRouting: NotificationRoutingService
     let notificationSettings: NotificationSettings
@@ -153,6 +157,9 @@ extension AppLauncher {
                 remoteChangeMonitor: RemoteChangeMonitor(),
                 accountStatusMonitor: AccountStatusMonitor(),
                 householdSharing: nil,
+                shareAcceptanceCoordinator: ShareAcceptanceCoordinator(
+                    service: NoOpShareAcceptanceService()
+                ),
                 notificationScheduler: NotificationScheduler(),
                 notificationRouting: routing,
                 notificationSettings: NotificationSettings()
@@ -176,6 +183,9 @@ extension AppLauncher {
                 remoteChangeMonitor: RemoteChangeMonitor(),
                 accountStatusMonitor: AccountStatusMonitor(),
                 householdSharing: sharing,
+                shareAcceptanceCoordinator: ShareAcceptanceCoordinator(
+                    service: NoOpShareAcceptanceService()
+                ),
                 notificationScheduler: NotificationScheduler(),
                 notificationRouting: routing,
                 notificationSettings: NotificationSettings()
@@ -192,12 +202,26 @@ extension AppLauncher {
                 remoteChangeMonitor: RemoteChangeMonitor(),
                 accountStatusMonitor: AccountStatusMonitor(),
                 householdSharing: nil,
+                shareAcceptanceCoordinator: ShareAcceptanceCoordinator(
+                    service: NoOpShareAcceptanceService()
+                ),
                 notificationScheduler: NotificationScheduler(),
                 notificationRouting: routing,
                 notificationSettings: NotificationSettings()
             )
         }
 
+        return try makeLiveProductionDependencies(routing: routing)
+    }
+
+    /// Production CloudKit-backed branch. Lifted out of
+    /// `makeProductionDependencies` so the parent stays under
+    /// SwiftLint's `function_body_length` ceiling once issue #105's
+    /// share-acceptance coordinator wiring landed.
+    @MainActor
+    private static func makeLiveProductionDependencies(
+        routing: NotificationRoutingService
+    ) throws -> LiveDependencies {
         // Phase 2.1: production stack is CloudKit-mirrored. Phase 3
         // adds the sharing service against the same container.
         let container = try CoreDataStack.cloudKitContainer()
@@ -216,26 +240,23 @@ extension AppLauncher {
             container: container,
             cloudKitContainer: cloudKitContainer
         )
-        // Phase 3.2: hand the share-acceptance service to the
-        // delegate so `application(_:userDidAcceptCloudKitShareWith:)`
-        // can import shared records when a recipient taps an
-        // invite. The delegate is instantiated by the system before
-        // this init runs, so a static var is the simplest seam.
-        NakedPantreeAppDelegate.wireShareAcceptance(
-            CloudShareAcceptance(container: container)
+        // Phase 3.2 / Issue #105: hand the share-acceptance coordinator
+        // to the delegate so `application(_:userDidAcceptCloudKitShareWith:)`
+        // can import shared records when a recipient taps an invite —
+        // and surface failures via the coordinator's `lastErrorMessage`
+        // alert state instead of swallowing them in `print`.
+        let shareAcceptanceCoordinator = ShareAcceptanceCoordinator(
+            service: CloudShareAcceptance(container: container)
         )
-        // Phase 9.3: persisted reminder time, constructed before
-        // the scheduler so it can read `settings.hourOfDay` /
-        // `.minute` when scheduling and when bundling same-day
-        // expiries (Phase 9.4 integration).
+        NakedPantreeAppDelegate.wireShareAcceptanceCoordinator(shareAcceptanceCoordinator)
         let notificationSettings = NotificationSettings(defaults: .standard)
         let notificationScheduler = NotificationScheduler(
             center: .current(),
             settings: notificationSettings
         )
         // Phase 4.2: the delegate routes notification taps into this
-        // service. Same static-var pattern as `shareAcceptance` —
-        // delegate construction precedes app init, so the seam is a
+        // service. Same static-var seam as the share-acceptance one —
+        // delegate construction precedes app init, so the wire-up is a
         // post-hoc handoff.
         NakedPantreeAppDelegate.wireNotificationRouting(routing)
 
@@ -244,6 +265,7 @@ extension AppLauncher {
             remoteChangeMonitor: remoteChangeMonitor,
             accountStatusMonitor: accountStatusMonitor,
             householdSharing: householdSharing,
+            shareAcceptanceCoordinator: shareAcceptanceCoordinator,
             notificationScheduler: notificationScheduler,
             notificationRouting: routing,
             notificationSettings: notificationSettings

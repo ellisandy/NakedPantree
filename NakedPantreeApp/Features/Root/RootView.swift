@@ -30,6 +30,10 @@ struct RootView: View {
     @Environment(\.notificationRouting) private var notificationRouting
     @Environment(\.remoteChangeMonitor) private var remoteChangeMonitor
     @Environment(\.notificationScheduler) private var notificationScheduler
+    /// Issue #105: surfaces share-acceptance failures via the alert
+    /// below. Default in `EnvironmentValues` wraps a no-op service so
+    /// previews / tests render without a real CloudKit container.
+    @Environment(\.shareAcceptanceCoordinator) private var shareAcceptanceCoordinator
 
     var body: some View {
         Group {
@@ -113,6 +117,39 @@ struct RootView: View {
         .alert("That item is gone.", isPresented: $isShowingMissingItemAlert) {
             Button("OK", role: .cancel) {}
         }
+        // Issue #105: share-accept failures used to land in `print()`;
+        // now they land here, where the user can retry or dismiss.
+        // The retry path replays the last failed `CKShare.Metadata`
+        // through the same coordinator, so a transient network hiccup
+        // is one tap away from a working import.
+        .alert(
+            "Couldn't import that household.",
+            isPresented: shareErrorBinding,
+            presenting: shareAcceptanceCoordinator.lastErrorMessage
+        ) { _ in
+            Button("Try Again") {
+                Task { await shareAcceptanceCoordinator.retry() }
+            }
+            Button("Dismiss", role: .cancel) {
+                shareAcceptanceCoordinator.dismissError()
+            }
+        } message: { message in
+            Text(message)
+        }
+    }
+
+    /// Issue #105: bridges the coordinator's optional `lastErrorMessage`
+    /// to a `Bool` binding the `.alert(isPresented:)` modifier wants.
+    /// Same shape as `photoErrorBinding` in `ItemDetailView`.
+    private var shareErrorBinding: Binding<Bool> {
+        Binding(
+            get: { shareAcceptanceCoordinator.lastErrorMessage != nil },
+            set: { newValue in
+                if !newValue {
+                    shareAcceptanceCoordinator.dismissError()
+                }
+            }
+        )
     }
 
     private func runBootstrap() async {
