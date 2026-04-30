@@ -29,6 +29,16 @@ struct ItemFormView: View {
     @State private var notes: String = ""
     @State private var isSaving = false
     @State private var saveError: String?
+    /// Issue #134: target location. Seeded from the mode in `prefill()`
+    /// (create → passed-in id; edit → existing item's id) and rebound
+    /// by the location picker. Optional so the section's empty-load
+    /// state and the picker's "no selection" rendering converge.
+    @State private var selectedLocationID: Location.ID?
+    /// Issue #134: locations the picker chooses from. Loaded once on
+    /// appear via `repositories.location.locations(in:)`. Empty array
+    /// (load not yet completed, or single-location household) hides
+    /// the picker — there's nowhere to move the item to.
+    @State private var locations: [Location] = []
 
     private let unitOptions: [NakedPantreeDomain.Unit] = [
         .count, .gram, .kilogram, .ounce, .pound,
@@ -52,6 +62,25 @@ struct ItemFormView: View {
                         ForEach(unitOptions, id: \.self) { option in
                             Text(option.pickerLabel).tag(option)
                         }
+                    }
+                }
+
+                // Issue #134: Location picker. Hidden when the
+                // household has zero or one locations — single-
+                // location users have nowhere to move to, and the
+                // initial-load case (locations not yet fetched)
+                // shouldn't flash an empty picker. The non-optional
+                // tag below pairs with `Location.ID?` selection so
+                // the no-selection state is representable.
+                if locations.count > 1 {
+                    Section("Location") {
+                        Picker("Location", selection: $selectedLocationID) {
+                            ForEach(locations) { location in
+                                Label(location.name, systemImage: location.kind.systemImage)
+                                    .tag(Optional(location.id))
+                            }
+                        }
+                        .accessibilityIdentifier("itemForm.location.picker")
                     }
                 }
 
@@ -97,6 +126,7 @@ struct ItemFormView: View {
                 }
             }
             .onAppear(perform: prefill)
+            .task { await loadLocations() }
         }
     }
 
@@ -118,8 +148,30 @@ struct ItemFormView: View {
         ItemFormSaveCoordinator.isValid(name: name)
     }
 
+    /// Issue #134: canonical fallback for `selectedLocationID` if the
+    /// `prefill()` seed is ever clobbered (e.g. an async race that
+    /// nils `@State` between appear and save). Mirror of `prefill`'s
+    /// initial assignment — keep them in sync if the mode seeding
+    /// rules ever change.
+    private func defaultLocationID() -> Location.ID {
+        switch mode {
+        case .create(let id): id
+        case .edit(let item): item.locationID
+        }
+    }
+
     private func prefill() {
-        if case .edit(let item) = mode {
+        // Issue #134: seed the location picker from the mode. Create
+        // mode carries the entry-point's locationID (sidebar `+`
+        // already resolved a target via the picker / 1-location
+        // shortcut, or `ItemsView`'s per-location `+` passes its
+        // current location). Edit mode prefills from the existing
+        // item's current location.
+        switch mode {
+        case .create(let locationID):
+            selectedLocationID = locationID
+        case .edit(let item):
+            selectedLocationID = item.locationID
             name = item.name
             quantity = item.quantity
             unit = item.unit
@@ -131,12 +183,36 @@ struct ItemFormView: View {
         }
     }
 
+    /// Issue #134: fetches the current household's locations so the
+    /// picker has options. Same swallow-on-fail pattern as
+    /// `SidebarView.reload` / `LocationsSection.reload` — if the
+    /// load errors, the picker stays hidden (single-location
+    /// fallback) and save still works against `selectedLocationID`
+    /// from `prefill()`.
+    @MainActor
+    private func loadLocations() async {
+        do {
+            let household = try await repositories.household.currentHousehold()
+            locations = try await repositories.location.locations(in: household.id)
+        } catch {
+            // Silent — picker stays hidden, original locationID still
+            // saves through fine.
+        }
+    }
+
     @MainActor
     private func save() async {
         // Issue #117: persistence + post-save scheduling now live in
         // `ItemFormSaveCoordinator`. The view stays responsible for the
         // SwiftUI surface (saving spinner, error banner, dismiss).
+        // Issue #134: `selectedLocationID` is seeded by `prefill()`
+        // before the form can be interacted with, so the `??` fallback
+        // is defensive — if it ever fires, fall back to the mode's
+        // canonical id (create's seed, or the item's current location
+        // on edit).
+        let resolvedLocationID = selectedLocationID ?? defaultLocationID()
         let draft = ItemFormDraft(
+            locationID: resolvedLocationID,
             name: name,
             quantity: quantity,
             unit: unit,

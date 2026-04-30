@@ -9,6 +9,12 @@ import NakedPantreeDomain
 /// affordance: the coordinator collapses them into the optional
 /// `Item.expiresAt` exactly the way the view used to.
 struct ItemFormDraft {
+    /// Issue #134: target location for the item. On the create branch
+    /// this seeds from the mode's `locationID` and may be reassigned
+    /// by the form's location picker; on the edit branch this is the
+    /// picker's current value, which can differ from the original
+    /// item's `locationID` when the user is moving the item.
+    var locationID: Location.ID
     var name: String
     var quantity: Int32
     var unit: NakedPantreeDomain.Unit
@@ -63,9 +69,13 @@ enum ItemFormSaveCoordinator {
 
         let saved: Item
         switch mode {
-        case .create(let locationID):
+        case .create:
+            // Issue #134: the mode carries an initial `locationID` that
+            // seeds the form's picker, but the picker's final value
+            // (`draft.locationID`) is what gets saved — the user may
+            // have changed it.
             let item = Item(
-                locationID: locationID,
+                locationID: draft.locationID,
                 name: trimmedName,
                 quantity: draft.quantity,
                 unit: draft.unit,
@@ -76,6 +86,13 @@ enum ItemFormSaveCoordinator {
             saved = item
         case .edit(let original):
             var updated = original
+            // Issue #134: edit mode now writes the picker's locationID
+            // back, letting users reassign an item to a new location
+            // without losing its history (id, createdAt, photos,
+            // notes, expiry). `attachLocation` in the repository
+            // re-points the relationship; cross-household moves are
+            // not supported (see `Item.locationID` doc).
+            updated.locationID = draft.locationID
             updated.name = trimmedName
             updated.quantity = draft.quantity
             updated.unit = draft.unit
