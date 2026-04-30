@@ -95,8 +95,12 @@ private struct AllItemsRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(item.name)
-                .font(.body)
+            HStack(spacing: 8) {
+                Text(item.name)
+                    .font(.body)
+                // Issue #156: shared expired badge across every list.
+                ItemExpiryBadge(expiresAt: item.expiresAt)
+            }
             HStack(spacing: 8) {
                 if let locationName {
                     Text(locationName)
