@@ -8,7 +8,7 @@ import Testing
 /// `userDidAcceptCloudKitShareWith` and notification taps before
 /// `NakedPantreeApp.init` runs and assigns the seam vars; pre-#108
 /// those events were silently dropped. Now they queue and drain
-/// once `wireShareAcceptance(_:)` / `wireNotificationRouting(_:)`
+/// once `wireShareAcceptanceCoordinator(_:)` / `wireNotificationRouting(_:)`
 /// is called.
 ///
 /// **Test scope.** These tests pin the queue + drain mechanic
@@ -28,7 +28,7 @@ struct NakedPantreeAppDelegatePreInitTests {
     /// independence holds. Static vars in the delegate carry across
     /// test instances otherwise.
     private func resetStaticState() {
-        NakedPantreeAppDelegate.shareAcceptance = nil
+        NakedPantreeAppDelegate.shareAcceptanceCoordinator = nil
         NakedPantreeAppDelegate.notificationRouting = nil
         NakedPantreeAppDelegate.pendingShareMetadata = []
         NakedPantreeAppDelegate.pendingNotificationItemIDs = []

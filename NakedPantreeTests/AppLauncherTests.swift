@@ -164,6 +164,9 @@ extension LiveDependencies {
             remoteChangeMonitor: RemoteChangeMonitor(),
             accountStatusMonitor: AccountStatusMonitor(),
             householdSharing: nil,
+            shareAcceptanceCoordinator: ShareAcceptanceCoordinator(
+                service: NoOpShareAcceptanceService()
+            ),
             notificationScheduler: NotificationScheduler(),
             notificationRouting: NotificationRoutingService(),
             notificationSettings: NotificationSettings()

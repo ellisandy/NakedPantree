@@ -27,10 +27,15 @@ final class NakedPantreeAppDelegate:
     /// Production sinks. Pre-#108, these were assigned directly by
     /// `NakedPantreeApp.init` and the delegate methods above
     /// silently dropped events delivered before init ran. Now use
-    /// `wireShareAcceptance(_:)` / `wireNotificationRouting(_:)`
+    /// `wireShareAcceptanceCoordinator(_:)` / `wireNotificationRouting(_:)`
     /// which both assign the seam **and** drain any pre-init
     /// queued events.
-    nonisolated(unsafe) static var shareAcceptance: CloudShareAcceptance?
+    ///
+    /// Issue #105: the share-acceptance sink moved from the bare
+    /// `CloudShareAcceptance` service to the app-layer
+    /// `ShareAcceptanceCoordinator`, which surfaces failures via
+    /// `lastErrorMessage` instead of swallowing them in `print`.
+    nonisolated(unsafe) static var shareAcceptanceCoordinator: ShareAcceptanceCoordinator?
     nonisolated(unsafe) static var notificationRouting: NotificationRoutingService?
 
     /// Pre-init event queues (issue #108). iOS can deliver the
@@ -52,17 +57,19 @@ final class NakedPantreeAppDelegate:
     /// before this call. Replace the previous `Self.shareAcceptance =
     /// acceptance` direct assignment with this method to recover
     /// pre-init events.
-    static func wireShareAcceptance(_ acceptance: CloudShareAcceptance) {
-        shareAcceptance = acceptance
+    ///
+    /// Issue #105: we now hand the delegate a coordinator (not the
+    /// bare service) so failures land in `lastErrorMessage` for
+    /// `RootView` to surface, instead of being swallowed in `print`.
+    /// `Task { @MainActor in ... }` because the coordinator is
+    /// MainActor-isolated.
+    static func wireShareAcceptanceCoordinator(_ coordinator: ShareAcceptanceCoordinator) {
+        shareAcceptanceCoordinator = coordinator
         let pending = pendingShareMetadata
         pendingShareMetadata = []
         for metadata in pending {
-            Task {
-                do {
-                    try await acceptance.acceptShare(metadata: metadata)
-                } catch {
-                    print("CloudKit share acceptance failed (drain): \(error)")
-                }
+            Task { @MainActor in
+                await coordinator.accept(metadata: metadata)
             }
         }
     }
@@ -103,22 +110,17 @@ final class NakedPantreeAppDelegate:
         // #108: queue if the seam isn't wired yet. iOS may deliver
         // share-accept during cold launch *before*
         // `NakedPantreeApp.init` has assigned the sink — the queue is
-        // drained by `wireShareAcceptance(_:)` once init runs.
-        guard let acceptance = Self.shareAcceptance else {
+        // drained by `wireShareAcceptanceCoordinator(_:)` once init
+        // runs.
+        guard let coordinator = Self.shareAcceptanceCoordinator else {
             Self.pendingShareMetadata.append(metadata)
             return
         }
-        Task {
-            do {
-                try await acceptance.acceptShare(metadata: metadata)
-            } catch {
-                // The recipient already tapped Accept — there's no
-                // user-actionable surface here without a separate UI
-                // pass. RemoteChangeMonitor will tick once the import
-                // lands; if it doesn't, that's an integration bug to
-                // chase, not a per-tap retry.
-                print("CloudKit share acceptance failed: \(error)")
-            }
+        // Issue #105: route through the coordinator so failures
+        // surface in `RootView`'s alert instead of getting swallowed.
+        // `@MainActor` hop because the coordinator is MainActor-isolated.
+        Task { @MainActor in
+            await coordinator.accept(metadata: metadata)
         }
     }
 
