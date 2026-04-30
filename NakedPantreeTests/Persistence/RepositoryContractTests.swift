@@ -671,6 +671,197 @@ struct ItemRepositoryContractTests {
     }
 }
 
+/// Issue #16: smart-list contract for items that need restocking. Lives
+/// in its own suite (rather than nested in `ItemRepositoryContractTests`)
+/// because adding it inline pushed that struct past
+/// SwiftLint's `type_body_length` ceiling, and these tests cohere
+/// around a single feature anyway.
+@Suite("ItemRepository needs-restocking contract")
+struct ItemRepositoryNeedsRestockingContractTests {
+    @Test(
+        "create + item(id:) round-trips needsRestocking",
+        arguments: RepositoryFactory.all)
+    func needsRestockingRoundTrips(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let itemRepo = bundle.item
+        let house = try await household.currentHousehold()
+        let kitchen = Location(householdID: house.id, name: "Kitchen")
+        try await locationRepo.create(kitchen)
+
+        // Default false branch.
+        let bread = Item(locationID: kitchen.id, name: "Bread")
+        try await itemRepo.create(bread)
+        let breadFetched = try #require(try await itemRepo.item(id: bread.id))
+        #expect(breadFetched.needsRestocking == false)
+
+        // Explicit true branch.
+        let coffee = Item(locationID: kitchen.id, name: "Coffee", needsRestocking: true)
+        try await itemRepo.create(coffee)
+        let coffeeFetched = try #require(try await itemRepo.item(id: coffee.id))
+        #expect(coffeeFetched.needsRestocking == true)
+    }
+
+    @Test(
+        "setNeedsRestocking flips only that flag — quantity / name / expiresAt untouched",
+        arguments: RepositoryFactory.all)
+    func setNeedsRestockingIsPartial(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let itemRepo = bundle.item
+        let house = try await household.currentHousehold()
+        let kitchen = Location(householdID: house.id, name: "Kitchen")
+        try await locationRepo.create(kitchen)
+
+        let expiry = Date(timeIntervalSince1970: 1_000_000)
+        let item = Item(
+            locationID: kitchen.id,
+            name: "Yogurt",
+            quantity: 2,
+            unit: .count,
+            expiresAt: expiry,
+            notes: "Plain greek"
+        )
+        try await itemRepo.create(item)
+
+        // Same race contract as `updateQuantity` (#118): the partial
+        // update must NOT touch sibling fields. Issue #16: a swipe
+        // action / detail toggle that races a form save shouldn't
+        // clobber the form's just-saved name/expiry/notes.
+        try await itemRepo.setNeedsRestocking(id: item.id, needsRestocking: true)
+
+        let after = try #require(try await itemRepo.item(id: item.id))
+        #expect(after.needsRestocking == true)
+        #expect(after.quantity == 2)
+        #expect(after.name == "Yogurt")
+        #expect(after.expiresAt == expiry)
+        #expect(after.notes == "Plain greek")
+        #expect(after.unit == .count)
+    }
+
+    @Test(
+        "setNeedsRestocking is a no-op when the item id doesn't exist",
+        arguments: RepositoryFactory.all)
+    func setNeedsRestockingMissingIDIsNoOp(factory: RepositoryFactory) async throws {
+        let itemRepo = factory.make().item
+        // Random UUID — not in the empty repo. Should silently no-op,
+        // matching `update(_:)` / `updateQuantity` semantics.
+        try await itemRepo.setNeedsRestocking(id: UUID(), needsRestocking: true)
+    }
+
+    @Test(
+        "setNeedsRestocking stamps updatedAt",
+        arguments: RepositoryFactory.all)
+    func setNeedsRestockingStampsTimestamp(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let itemRepo = bundle.item
+        let house = try await household.currentHousehold()
+        let kitchen = Location(householdID: house.id, name: "Kitchen")
+        try await locationRepo.create(kitchen)
+
+        let originalDate = Date(timeIntervalSince1970: 1)
+        let item = Item(
+            locationID: kitchen.id,
+            name: "Coffee",
+            createdAt: originalDate,
+            updatedAt: originalDate
+        )
+        try await itemRepo.create(item)
+
+        try await itemRepo.setNeedsRestocking(id: item.id, needsRestocking: true)
+
+        let after = try #require(try await itemRepo.item(id: item.id))
+        #expect(after.createdAt == originalDate)
+        #expect(after.updatedAt > originalDate)
+    }
+
+    @Test(
+        "needsRestocking(in:) includes flagged + zero-quantity items, sorted by name",
+        arguments: RepositoryFactory.all)
+    func needsRestockingUnion(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let itemRepo = bundle.item
+        let house = try await household.currentHousehold()
+        let pantry = Location(householdID: house.id, name: "Pantry")
+        let freezer = Location(householdID: house.id, name: "Freezer", kind: .freezer)
+        try await locationRepo.create(pantry)
+        try await locationRepo.create(freezer)
+
+        // Flagged manually (typical "we'll need this soon") — non-zero qty.
+        try await itemRepo.create(
+            Item(locationID: pantry.id, name: "Olive Oil", quantity: 1, needsRestocking: true)
+        )
+        // Implicitly out-of-stock (zero qty, not flagged) — kept around
+        // so the user remembers it's a staple.
+        try await itemRepo.create(Item(locationID: pantry.id, name: "Coffee", quantity: 0))
+        // In another location, flagged.
+        try await itemRepo.create(
+            Item(locationID: freezer.id, name: "Ice Cream", quantity: 2, needsRestocking: true)
+        )
+        // Has stock and not flagged — should be excluded.
+        try await itemRepo.create(Item(locationID: pantry.id, name: "Rice", quantity: 5))
+        // Both flagged AND zero qty — appears once, not duplicated.
+        try await itemRepo.create(
+            Item(locationID: freezer.id, name: "Bread", quantity: 0, needsRestocking: true)
+        )
+
+        let restocking = try await itemRepo.needsRestocking(in: house.id)
+        #expect(restocking.map(\.name) == ["Bread", "Coffee", "Ice Cream", "Olive Oil"])
+    }
+
+    @Test(
+        "needsRestocking(in:) is scoped — items in other households are filtered out",
+        arguments: RepositoryFactory.all)
+    func needsRestockingScopedByHousehold(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let itemRepo = bundle.item
+
+        let mine = try await household.currentHousehold()
+        let elsewhere = Household(name: "Mom's Pantry")
+        let myKitchen = Location(householdID: mine.id, name: "Kitchen")
+        let momsKitchen = Location(householdID: elsewhere.id, name: "Mom's Kitchen")
+        try await locationRepo.create(myKitchen)
+        try await locationRepo.create(momsKitchen)
+
+        try await itemRepo.create(
+            Item(locationID: myKitchen.id, name: "My Coffee", needsRestocking: true)
+        )
+        try await itemRepo.create(
+            Item(locationID: momsKitchen.id, name: "Mom's Coffee", needsRestocking: true)
+        )
+
+        let mineResults = try await itemRepo.needsRestocking(in: mine.id)
+        #expect(mineResults.map(\.name) == ["My Coffee"])
+    }
+
+    @Test(
+        "needsRestocking(in:) is empty when nothing qualifies",
+        arguments: RepositoryFactory.all)
+    func needsRestockingEmpty(factory: RepositoryFactory) async throws {
+        let bundle = factory.make()
+        let household = bundle.household
+        let locationRepo = bundle.location
+        let itemRepo = bundle.item
+        let house = try await household.currentHousehold()
+        let kitchen = Location(householdID: house.id, name: "Kitchen")
+        try await locationRepo.create(kitchen)
+
+        try await itemRepo.create(Item(locationID: kitchen.id, name: "Rice", quantity: 5))
+        try await itemRepo.create(Item(locationID: kitchen.id, name: "Beans", quantity: 3))
+
+        let restocking = try await itemRepo.needsRestocking(in: house.id)
+        #expect(restocking.isEmpty)
+    }
+}
+
 @Suite("ItemPhotoRepository contract")
 struct ItemPhotoRepositoryContractTests {
     @Test(

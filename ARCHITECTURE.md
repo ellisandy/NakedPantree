@@ -147,6 +147,7 @@ forward-incompatible client don't crash decode.
 | `unitRaw` | String | `Unit` enum raw, default `"count"` |
 | `expiresAt` | Date? | Drives expiry notifications |
 | `notes` | String? | |
+| `needsRestocking` | Bool | Default `false`. User-flagged restock signal — issue #16. Surfaces in the "Needs Restocking" smart list together with `quantity == 0`. |
 | `createdAt` | Date | |
 | `updatedAt` | Date | Touched on every edit |
 | `location` | `Location?` | Inverse |

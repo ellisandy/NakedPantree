@@ -314,6 +314,10 @@ private actor ThrowingItemRepository: ItemRepository {
     func updateQuantity(id: Item.ID, quantity: Int32) async throws {
         throw FormCoordinatorTestError()
     }
+    func setNeedsRestocking(id: Item.ID, needsRestocking: Bool) async throws {
+        throw FormCoordinatorTestError()
+    }
+    func needsRestocking(in householdID: Household.ID) async throws -> [Item] { [] }
     func delete(id: Item.ID) async throws { throw FormCoordinatorTestError() }
 }
 
