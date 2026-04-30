@@ -73,10 +73,18 @@ public enum CoreDataStack {
     /// without each repository having to remember.
     ///
     /// Both stores live in the OS-default Application Support directory.
+    ///
+    /// **Issue #106:** the load failure used to call `fatalError`, crashing
+    /// the app on every cold start when a user hit a corrupt SQLite or a
+    /// failed automatic mapping-model inference (which `shouldMigrate…` +
+    /// `shouldInferMappingModel…` can produce on dev-untested edge cases).
+    /// Now the function throws `CoreDataStackError.storeLoadFailed`; the
+    /// caller (`AppLauncher`) catches and routes the user into a recovery
+    /// surface with retry + iCloud-gated reset options.
     public static func cloudKitContainer(
         name: String = "NakedPantree",
         containerIdentifier: String = cloudKitContainerIdentifier
-    ) -> NSPersistentCloudKitContainer {
+    ) throws -> NSPersistentCloudKitContainer {
         let container = NSPersistentCloudKitContainer(name: name, managedObjectModel: model)
 
         let storeDirectory = NSPersistentContainer.defaultDirectoryURL()
@@ -101,13 +109,29 @@ public enum CoreDataStack {
             if let error { loadError = error }
         }
         if let loadError {
-            fatalError("CloudKit persistent stores failed to load: \(loadError)")
+            throw CoreDataStackError.storeLoadFailed(underlying: loadError)
         }
 
         container.viewContext.mergePolicy = defaultMergePolicy
         container.viewContext.automaticallyMergesChangesFromParent = true
 
         return container
+    }
+
+    /// File URLs of the on-disk SQLite stores plus their sidecar files
+    /// (`-shm`, `-wal`). Issue #106: `AppLauncher.resetAndRetry` deletes
+    /// these before re-attempting load. Exposed `public` so the launcher
+    /// (in the app target) can call into it without knowing the
+    /// per-store filename convention.
+    public static func cloudKitStoreFileURLs(
+        name: String = "NakedPantree"
+    ) -> [URL] {
+        let directory = NSPersistentContainer.defaultDirectoryURL()
+        let stems = ["\(name)-private.sqlite", "\(name)-shared.sqlite"]
+        let suffixes = ["", "-shm", "-wal"]
+        return stems.flatMap { stem in
+            suffixes.map { directory.appendingPathComponent(stem + $0) }
+        }
     }
 
     /// Returns the private CloudKit-backed store on a multi-store container,
@@ -172,6 +196,25 @@ public enum CoreDataStack {
     /// `ARCHITECTURE.md` §5 conflict resolution for the rationale.
     public static var defaultMergePolicy: NSMergePolicy {
         NSMergePolicy(merge: .mergeByPropertyObjectTrumpMergePolicyType)
+    }
+
+    /// Errors `cloudKitContainer(...)` can throw. Added in #106 — the
+    /// previous failure mode was `fatalError` on store load, crashing
+    /// the app with no recovery path. Callers (`AppLauncher`) catch
+    /// and route to the recovery surface.
+    public enum CoreDataStackError: Error, LocalizedError {
+        /// `loadPersistentStores` reported a non-nil error. The wrapped
+        /// `Error` is opaque (Core Data domain typically) — surface
+        /// `localizedDescription` to users; log the full value for
+        /// triage.
+        case storeLoadFailed(underlying: Error)
+
+        public var errorDescription: String? {
+            switch self {
+            case .storeLoadFailed(let underlying):
+                return underlying.localizedDescription
+            }
+        }
     }
 
     private static func makeDescription(
