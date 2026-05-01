@@ -49,6 +49,21 @@ final class EventKitRemindersService: RemindersService, @unchecked Sendable {
         // reconciliation path — not worth it for the v1 surface.
         do {
             let granted = try await store.requestFullAccessToReminders()
+            if granted {
+                // TestFlight build 58 bug: `EKEventStore` caches its
+                // source list at construction time. Our store is
+                // built at `LiveDependencies` boot, before TCC is
+                // granted. After the first-time grant the cache
+                // still reads as empty, so `calendars(for: .reminder)`
+                // returns `[]` and the picker renders "No Reminders
+                // lists" even though the user has lists. Apple
+                // documents `reset()` as the way to invalidate cached
+                // state after an authorization change; calling it on
+                // every grant is safe (no-op when the store was
+                // already in sync) and removes the order-of-init
+                // pitfall. See `EKEventStore.reset()` headerdoc.
+                store.reset()
+            }
             return granted ? .granted : .denied
         } catch {
             // EventKit can throw if the user has previously denied —
