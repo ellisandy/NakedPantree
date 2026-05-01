@@ -130,6 +130,17 @@ struct LiveDependencies {
     let notificationScheduler: NotificationScheduler
     let notificationRouting: NotificationRoutingService
     let notificationSettings: NotificationSettings
+    /// Issue #155: production binding is `EventKitRemindersService`,
+    /// non-production branches bind `InMemoryRemindersService`. The
+    /// snapshot / EMPTY_STORE / XCTest paths must NOT allocate
+    /// `EKEventStore` — testing the bypass is part of the issue's
+    /// acceptance criteria.
+    let remindersService: any RemindersService
+    /// Issue #155: persisted choice of which Reminders list a push
+    /// lands in. Production reads/writes `UserDefaults.standard`;
+    /// non-production paths use the no-op `nonisolated init()` so
+    /// previews don't leak between runs.
+    let remindersListPreference: RemindersListPreference
 }
 
 // MARK: - Production builders
@@ -151,6 +162,8 @@ extension AppLauncher {
             // Bypass Core Data when the snapshot UI tests launch us —
             // they need a deterministic, populated state and never want
             // a stray SQLite file from a previous run leaking through.
+            // Issue #155: `InMemoryRemindersService` keeps the snapshot
+            // surface from allocating `EKEventStore`.
             NakedPantreeAppDelegate.wireNotificationRouting(routing)
             return LiveDependencies(
                 repositories: SnapshotFixtures.makeSeededRepositories(),
@@ -162,7 +175,9 @@ extension AppLauncher {
                 ),
                 notificationScheduler: NotificationScheduler(),
                 notificationRouting: routing,
-                notificationSettings: NotificationSettings()
+                notificationSettings: NotificationSettings(),
+                remindersService: InMemoryRemindersService(),
+                remindersListPreference: RemindersListPreference()
             )
         }
         if ProcessInfo.processInfo.environment["EMPTY_STORE"] == "1" {
@@ -188,7 +203,12 @@ extension AppLauncher {
                 ),
                 notificationScheduler: NotificationScheduler(),
                 notificationRouting: routing,
-                notificationSettings: NotificationSettings()
+                notificationSettings: NotificationSettings(),
+                // Issue #155: same `InMemoryRemindersService` as the
+                // snapshot branch — the EMPTY_STORE UI tests must not
+                // hit EventKit either.
+                remindersService: InMemoryRemindersService(),
+                remindersListPreference: RemindersListPreference()
             )
         }
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
@@ -207,7 +227,12 @@ extension AppLauncher {
                 ),
                 notificationScheduler: NotificationScheduler(),
                 notificationRouting: routing,
-                notificationSettings: NotificationSettings()
+                notificationSettings: NotificationSettings(),
+                // Issue #155: unit tests that exercise repository
+                // contracts must not hit EventKit even though the
+                // host's `LiveDependencies` is constructed.
+                remindersService: InMemoryRemindersService(),
+                remindersListPreference: RemindersListPreference()
             )
         }
 
@@ -260,6 +285,14 @@ extension AppLauncher {
         // post-hoc handoff.
         NakedPantreeAppDelegate.wireNotificationRouting(routing)
 
+        // Issue #155: production binding for the Reminders push.
+        // `EventKitRemindersService` constructs a single shared
+        // `EKEventStore` — Apple recommends one per app instance.
+        // Permission isn't requested here; the coordinator asks
+        // lazily on the first push tap.
+        let remindersService = EventKitRemindersService()
+        let remindersListPreference = RemindersListPreference(defaults: .standard)
+
         return LiveDependencies(
             repositories: repositories,
             remoteChangeMonitor: remoteChangeMonitor,
@@ -268,7 +301,9 @@ extension AppLauncher {
             shareAcceptanceCoordinator: shareAcceptanceCoordinator,
             notificationScheduler: notificationScheduler,
             notificationRouting: routing,
-            notificationSettings: notificationSettings
+            notificationSettings: notificationSettings,
+            remindersService: remindersService,
+            remindersListPreference: remindersListPreference
         )
     }
 

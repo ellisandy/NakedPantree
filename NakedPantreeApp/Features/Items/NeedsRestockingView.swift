@@ -1,5 +1,6 @@
 import NakedPantreeDomain
 import SwiftUI
+import UIKit
 
 /// Issue #16: "Needs Restocking" smart-list content column. Cross-
 /// household list of items the user has flagged for restocking
@@ -12,14 +13,26 @@ import SwiftUI
 /// off (the swipe label flips to "Got it" when the item is already
 /// flagged), trailing swipe stays empty here — destructive deletes
 /// belong on the per-location list, not on a smart projection.
+///
+/// Issue #155: a `Push to Reminders` toolbar button takes the items
+/// currently on this list and writes them as `EKReminder`s into the
+/// user's chosen Reminders list. The orchestration lives in
+/// `PushToRemindersCoordinator`; this view just drives its state
+/// machine and renders the picker / toast / inline-error surfaces.
 struct NeedsRestockingView: View {
     @Binding var selectedItemID: Item.ID?
 
     @Environment(\.repositories) private var repositories
     @Environment(\.remoteChangeMonitor) private var remoteChangeMonitor
+    @Environment(\.remindersService) private var remindersService
+    @Environment(\.remindersListPreference) private var remindersListPreference
     @State private var items: [Item] = []
     @State private var locationsByID: [Location.ID: Location] = [:]
     @State private var didLoad = false
+    /// Issue #155: lazily constructed on first appearance. The
+    /// coordinator captures the service + preference instance for
+    /// the lifetime of the view.
+    @State private var pushCoordinator: PushToRemindersCoordinator?
 
     var body: some View {
         Group {
@@ -47,10 +60,216 @@ struct NeedsRestockingView: View {
             }
         }
         .navigationTitle("Needs Restocking")
+        .toolbar { pushToolbar }
         .task(id: remoteChangeMonitor.changeToken) {
             await load()
         }
+        .onAppear {
+            // Build the coordinator once. SwiftUI may rebuild the
+            // view in compact-iPhone splits but `@State` survives;
+            // the `?? makeCoordinator()` keeps construction lazy and
+            // idempotent.
+            if pushCoordinator == nil {
+                pushCoordinator = makeCoordinator()
+            }
+        }
+        .sheet(isPresented: pickerPresentationBinding) {
+            pickerSheet
+        }
+        .alert(
+            "Reminders access isn't on yet.",
+            isPresented: permissionDeniedBinding
+        ) {
+            Button("Open Settings") {
+                openSystemSettings()
+                pushCoordinator?.acknowledge()
+            }
+            Button("Not now", role: .cancel) {
+                pushCoordinator?.acknowledge()
+            }
+        } message: {
+            Text(
+                "Turn on Reminders for Naked Pantree in Settings, "
+                    + "then try again."
+            )
+        }
+        .alert(
+            "Couldn't push to Reminders.",
+            isPresented: failureBinding,
+            presenting: failureMessage
+        ) { _ in
+            Button("OK", role: .cancel) {
+                pushCoordinator?.acknowledge()
+            }
+        } message: { message in
+            Text(message)
+        }
+        .overlay(alignment: .bottom) {
+            if let summary = completedSummary {
+                pushedToast(summary)
+                    .padding(.bottom, 16)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: completedSummary)
     }
+
+    // MARK: Toolbar
+
+    @ToolbarContentBuilder
+    private var pushToolbar: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                Task { await runPush() }
+            } label: {
+                Label("Push to Reminders", systemImage: "list.bullet.rectangle")
+            }
+            .accessibilityIdentifier("needsRestocking.pushToReminders")
+            // Voice §10: empty list disables the button — there's
+            // nothing to push, and "Pushed 0 items" reads as a bug.
+            .disabled(items.isEmpty || isRunning)
+        }
+    }
+
+    // MARK: Coordinator helpers
+
+    private func makeCoordinator() -> PushToRemindersCoordinator {
+        PushToRemindersCoordinator(
+            service: remindersService,
+            preference: remindersListPreference
+        )
+    }
+
+    private func runPush() async {
+        if pushCoordinator == nil { pushCoordinator = makeCoordinator() }
+        await pushCoordinator?.requestPush(
+            items: items,
+            locationsByID: locationsByID
+        )
+    }
+
+    private var isRunning: Bool {
+        if case .running = pushCoordinator?.state { return true }
+        return false
+    }
+
+    // MARK: State-driven sheet / alert / toast bindings
+
+    private var pickerPresentationBinding: Binding<Bool> {
+        Binding(
+            get: {
+                if case .needsListPick = pushCoordinator?.state { return true }
+                return false
+            },
+            set: { newValue in
+                if !newValue { pushCoordinator?.cancelListPick() }
+            }
+        )
+    }
+
+    @ViewBuilder
+    private var pickerSheet: some View {
+        if case .needsListPick(let lists) = pushCoordinator?.state {
+            RemindersListPickerSheet(
+                lists: lists,
+                currentListID: remindersListPreference.listID,
+                onPick: { picked in
+                    Task {
+                        await pushCoordinator?.setChosenListID(
+                            picked.id,
+                            items: items,
+                            locationsByID: locationsByID
+                        )
+                    }
+                },
+                onCancel: { pushCoordinator?.cancelListPick() }
+            )
+        }
+    }
+
+    private var permissionDeniedBinding: Binding<Bool> {
+        Binding(
+            get: {
+                if case .permissionDenied = pushCoordinator?.state { return true }
+                return false
+            },
+            set: { newValue in
+                if !newValue { pushCoordinator?.acknowledge() }
+            }
+        )
+    }
+
+    private var failureBinding: Binding<Bool> {
+        Binding(
+            get: {
+                if case .failed = pushCoordinator?.state { return true }
+                return false
+            },
+            set: { newValue in
+                if !newValue { pushCoordinator?.acknowledge() }
+            }
+        )
+    }
+
+    private var failureMessage: String? {
+        if case .failed(let message) = pushCoordinator?.state { return message }
+        return nil
+    }
+
+    private var completedSummary: PushToRemindersCoordinator.PushSummary? {
+        if case .completed(let summary) = pushCoordinator?.state { return summary }
+        return nil
+    }
+
+    @ViewBuilder
+    private func pushedToast(_ summary: PushToRemindersCoordinator.PushSummary) -> some View {
+        // Voice rule §10: brand wink that's still useful, scannable
+        // at glance. The phrasing here is from the issue spec
+        // ("Pushed N items to <list>. Don't forget your bag.").
+        VStack(spacing: 4) {
+            Text(toastTitle(for: summary))
+                .font(.subheadline.weight(.semibold))
+            Text("Don't forget your bag.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityIdentifier("needsRestocking.pushedToast")
+        .task {
+            // Auto-acknowledge after a short read window so the toast
+            // doesn't linger across re-pushes. 2.5s reads as a normal
+            // notification dwell time.
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            pushCoordinator?.acknowledge()
+        }
+    }
+
+    private func toastTitle(
+        for summary: PushToRemindersCoordinator.PushSummary
+    ) -> String {
+        if summary.totalChanges == 0 {
+            return "Reminders is already up to date."
+        }
+        let count = summary.createdCount + summary.updatedCount
+        let item = count == 1 ? "item" : "items"
+        return "Pushed \(count) \(item) to \(summary.listTitle)."
+    }
+
+    // MARK: System Settings deep link
+
+    /// Opens iOS Settings → Naked Pantree so the user can flip
+    /// Reminders permission on. Spec calls this out as the friendly
+    /// fallback for the denial path.
+    private func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else {
+            return
+        }
+        UIApplication.shared.open(url)
+    }
+
+    // MARK: Existing flow
 
     @ViewBuilder
     private var emptyState: some View {
