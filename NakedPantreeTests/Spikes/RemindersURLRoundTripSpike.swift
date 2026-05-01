@@ -89,17 +89,46 @@ private struct FetchedSnapshot: Sendable {
 struct RemindersURLRoundTripSpike {
     @Test("URL set on save survives a fetchReminders round-trip")
     func urlRoundTrips() async throws {
-        let store = EKEventStore()
+        // Stage A.0 — synchronous authorization check BEFORE we
+        // construct the store or call `requestFullAccessToReminders`.
+        //
+        // Why: on CI runners, the unit-test process has no way to
+        // dismiss a permission alert, and `requestFullAccessToReminders`
+        // blocks indefinitely waiting for user input — the entire
+        // xcodebuild test job hits the GH Actions 6-hour ceiling and
+        // gets killed. Pre-checking the status keeps that path
+        // off-limits to CI:
+        //
+        //   * .fullAccess     → run the spike (TCC pre-granted via
+        //                       `xcrun simctl privacy ... grant
+        //                       reminders cc.mnmlst.nakedpantree`).
+        //   * .notDetermined  → bail. CI lands here; would prompt.
+        //   * .denied / .restricted → bail.
+        //   * .writeOnly      → bail; spike needs read access too.
+        //
+        // Swift Testing has no first-class skip; an early return
+        // reads as "passed." The print line surfaces the bail in the
+        // test log so a future contributor running locally can tell
+        // why the spike didn't actually exercise the contract.
+        let status = EKEventStore.authorizationStatus(for: .reminder)
+        guard status == .fullAccess else {
+            print(
+                "⏭  Spike skipped: reminders authorization is "
+                    + "\(status.rawValue) (need .fullAccess via "
+                    + "`xcrun simctl privacy <device-id> grant reminders "
+                    + "cc.mnmlst.nakedpantree`)."
+            )
+            return
+        }
 
-        // Stage A.1 — request permission. If permission has already
-        // been granted (via `xcrun simctl privacy` pre-grant), this
-        // returns true immediately. If denied, the spike can't run
-        // and we return early — better than failing loudly when the
-        // failure isn't about the URL contract. Swift Testing has no
-        // first-class skip; an early return reads as "passed."
+        let store = EKEventStore()
+        // Stage A.1 — Swift Testing has no first-class skip; an early
+        // return reads as "passed." Now that we know the user has
+        // already granted full access, this call is a no-op fast path
+        // — `requestFullAccessToReminders` returns true immediately.
         let granted = try await store.requestFullAccessToReminders()
         guard granted else {
-            print("⏭  Spike skipped: Reminders permission not granted in this environment.")
+            print("⏭  Spike skipped: requestFullAccessToReminders unexpectedly returned false.")
             return
         }
 
