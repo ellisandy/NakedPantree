@@ -97,21 +97,17 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            // Build #52 fix: present the LocationsSection's
-            // create/edit form here, at the NavigationStack level,
-            // rather than from inside the Form's Section. Section-
-            // attached `.sheet(item:)` made SwiftUI dismiss the
-            // entire sheet stack on present. The section flips
-            // `locationFormMode` via its parent-owned binding; this
-            // modifier renders the actual sheet.
-            .sheet(item: $locationFormMode) { mode in
-                LocationFormView(mode: mode) {
-                    // No-op — `LocationsSection.onChange(of: formMode)`
-                    // catches the dismiss edge and triggers its own
-                    // reload. Keeping that local to the section
-                    // avoids threading another callback through.
-                }
-            }
+            // PROBE (issue #162) — temporarily commented out to verify
+            // multi-sheet conflict theory. SwiftUI seems to allow only
+            // one `.sheet` modifier per container; stacking three on
+            // the NavigationStack may be why the Reminders picker
+            // auto-dismisses ~553ms after presentation. If commenting
+            // out the location-form and prepared-share sheets makes
+            // the picker stay open, we'll fold all three into a
+            // single `.sheet(item:)` driven by an enum.
+            // .sheet(item: $locationFormMode) { mode in
+            //     LocationFormView(mode: mode) { }
+            // }
             // Issue #155: Reminders list re-pick. Lifted to the
             // NavigationStack level for the same reason the location
             // form is — section-attached sheets collapse the stack
@@ -138,19 +134,17 @@ struct SettingsView: View {
             } message: { message in
                 Text(message)
             }
-            .sheet(item: $preparedShare) { prepared in
-                // Issue #90: by the time this closure fires, the share
-                // is already a real `CKShare` resolved by
-                // `ShareSheetPreparation`. The controller uses
-                // `init(share:container:)` and renders participant UI
-                // immediately — no more lazy preparation handler.
-                CloudSharingControllerView(
-                    share: prepared.share,
-                    container: prepared.container,
-                    onCompletion: { preparedShare = nil }
-                )
-                .ignoresSafeArea()
-            }
+            // PROBE (issue #162) — see note above. Temporarily
+            // disabled so only the Reminders picker sheet is active
+            // on this view, isolating the multi-sheet conflict.
+            // .sheet(item: $preparedShare) { prepared in
+            //     CloudSharingControllerView(
+            //         share: prepared.share,
+            //         container: prepared.container,
+            //         onCompletion: { preparedShare = nil }
+            //     )
+            //     .ignoresSafeArea()
+            // }
             .alert(item: $shareError) { wrapper in
                 Alert(
                     title: Text("Couldn't share"),

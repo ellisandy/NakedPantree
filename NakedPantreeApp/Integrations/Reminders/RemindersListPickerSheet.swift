@@ -1,5 +1,6 @@
 import NakedPantreeDomain
 import SwiftUI
+import os
 
 /// Issue #155 — picker UI for the Reminders list a push lands in.
 /// Presented in two contexts:
@@ -22,6 +23,14 @@ struct RemindersListPickerSheet: View {
     let onPick: (RemindersListSummary) -> Void
     let onCancel: () -> Void
 
+    /// Issue #162 probe: confirm whether the picker actually mounts
+    /// (and how many rows it sees) before SwiftUI tears it back down.
+    /// Same subsystem/category as `EventKitRemindersService`.
+    private static let logger = Logger(
+        subsystem: "cc.mnmlst.nakedpantree",
+        category: "reminders"
+    )
+
     var body: some View {
         NavigationStack {
             Group {
@@ -39,6 +48,17 @@ struct RemindersListPickerSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onCancel() }
                 }
+            }
+            .onAppear {
+                let count = lists.count
+                Self.logger.notice(
+                    "RemindersListPickerSheet.onAppear: rendering count=\(count, privacy: .public)"
+                )
+            }
+            .onDisappear {
+                Self.logger.notice(
+                    "RemindersListPickerSheet.onDisappear"
+                )
             }
         }
     }
