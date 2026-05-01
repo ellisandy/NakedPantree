@@ -1,6 +1,7 @@
 import Foundation
 import NakedPantreeDomain
 import SwiftUI
+import os
 
 /// Issue #155 — orchestrates the "Push to Reminders" flow from the
 /// `NeedsRestockingView` toolbar button. Pulled out of the view body
@@ -99,14 +100,25 @@ final class PushToRemindersCoordinator {
         items: [Item],
         locationsByID: [Location.ID: Location]
     ) async {
-        if case .running = state { return }
+        if case .running = state {
+            Self.logger.notice("coordinator.requestPush: already running, ignoring")
+            return
+        }
+        Self.logger.notice(
+            "coordinator.requestPush: entry, items.count=\(items.count, privacy: .public)"
+        )
         state = .running
 
         do {
             // 1. Permission.
             let access = try await service.requestAccess()
+            Self.logger.notice(
+                // swiftlint:disable:next line_length
+                "coordinator.requestPush: requestAccess returned \(String(describing: access), privacy: .public)"
+            )
             guard access == .granted else {
                 state = .permissionDenied
+                Self.logger.notice("coordinator.requestPush: -> permissionDenied")
                 return
             }
 
@@ -114,7 +126,13 @@ final class PushToRemindersCoordinator {
             let listID: String
             let listTitle: String
             if let stored = preference.listID {
+                Self.logger.notice(
+                    "coordinator.requestPush: have stored listID, fetching availableLists"
+                )
                 let lists = try await service.availableLists()
+                Self.logger.notice(
+                    "coordinator.requestPush: availableLists returned \(lists.count, privacy: .public)"
+                )
                 if let match = lists.first(where: { $0.id == stored }) {
                     listID = match.id
                     listTitle = match.title
@@ -123,12 +141,22 @@ final class PushToRemindersCoordinator {
                     // — don't silently fall back. Spec: "surface a
                     // one-time 'Pick a new list' prompt and don't
                     // silently fall back."
+                    Self.logger.notice(
+                        "coordinator.requestPush: stored list missing, clearing and re-prompting"
+                    )
                     preference.listID = nil
                     state = .needsListPick(lists: lists)
                     return
                 }
             } else {
+                Self.logger.notice(
+                    "coordinator.requestPush: no stored listID, fetching availableLists for picker"
+                )
                 let lists = try await service.availableLists()
+                Self.logger.notice(
+                    // swiftlint:disable:next line_length
+                    "coordinator.requestPush: availableLists returned \(lists.count, privacy: .public) lists -> needsListPick"
+                )
                 state = .needsListPick(lists: lists)
                 return
             }
@@ -153,11 +181,27 @@ final class PushToRemindersCoordinator {
                 )
             )
         } catch let error as RemindersServiceError {
+            Self.logger.error(
+                // swiftlint:disable:next line_length
+                "coordinator.requestPush: caught RemindersServiceError -> \(String(describing: error), privacy: .public)"
+            )
             state = .failed(message: Self.message(for: error))
         } catch {
+            Self.logger.error(
+                "coordinator.requestPush: caught \(error.localizedDescription, privacy: .public)"
+            )
             state = .failed(message: error.localizedDescription)
         }
     }
+
+    /// Issue #162 trace. Same subsystem/category as the EventKit
+    /// adapter so a single Console filter
+    /// (`subsystem:cc.mnmlst.nakedpantree category:reminders`) covers
+    /// the entire push pipeline.
+    private static let logger = Logger(
+        subsystem: "cc.mnmlst.nakedpantree",
+        category: "reminders"
+    )
 
     /// Map predictable `RemindersServiceError` cases to short user-
     /// facing strings. Falls through to the localized description for

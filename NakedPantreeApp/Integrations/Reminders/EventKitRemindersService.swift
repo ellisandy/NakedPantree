@@ -100,7 +100,13 @@ final class EventKitRemindersService: RemindersService, @unchecked Sendable {
     }
 
     func availableLists() async throws -> [RemindersListSummary] {
-        try requireAccess()
+        Self.logger.notice("availableLists: entry")
+        do {
+            try requireAccess()
+        } catch {
+            Self.logger.error("availableLists: requireAccess threw — bailing")
+            throw error
+        }
         let sources = store.sources
         let calendars = store.calendars(for: .reminder)
         Self.logger.notice(
@@ -170,6 +176,9 @@ final class EventKitRemindersService: RemindersService, @unchecked Sendable {
 
     private func requireAccess() throws {
         let status = EKEventStore.authorizationStatus(for: .reminder)
+        Self.logger.notice(
+            "requireAccess: status=\(status.rawValue, privacy: .public)"
+        )
         switch status {
         case .fullAccess, .writeOnly:
             return
