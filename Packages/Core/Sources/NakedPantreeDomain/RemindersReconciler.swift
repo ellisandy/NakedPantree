@@ -23,8 +23,9 @@ import Foundation
 ///   crossed it off; we don't resurrect it. (If the flag stays true,
 ///   the user can clear-and-reflag in the app to push a fresh copy.)
 /// - No existing reminder → queue a `Create` with title = item.name,
-///   notes = `[NP-ID:<UUID>]\n<qty> <unit> — <location>`, url =
-///   `nakedpantree://item/<UUID>`.
+///   notes = `<location>\n\n[NP-ID:<UUID>]` (location-only body
+///   above a blank-line-separated parser anchor; sentinel-only when
+///   no location resolves), url = `nakedpantree://item/<UUID>`.
 ///
 /// For each existing reminder whose `nakedPantreeID` resolves to an
 /// `Item.id` that's **not** on the current Needs Restocking list (the
@@ -137,26 +138,41 @@ public enum RemindersReconciler {
     /// tests can pin the payload shape (title / notes / url) directly,
     /// and so the adapter can reuse the encoder when the reconciler
     /// queues a create.
+    ///
+    /// **Notes shape (revisited).** Earlier the body led with quantity
+    /// + unit + location (`"1 — Old Garage Pantry"`) and the sentinel
+    /// went *first*, before the body. A user looking at the reminder
+    /// in Apple's Reminders.app saw the `[NP-ID:UUID]` line as the
+    /// primary content with a confusing `"1 — Old Garage Pantry"`
+    /// underneath — quantity in our domain means "how many I have,"
+    /// which has no useful interpretation as a shopping-list line.
+    ///
+    /// The current shape:
+    /// - body = the location name only, when one resolves
+    /// - sentinel goes at the *end* of the notes after a blank line
+    /// - sentinel-only notes when no location resolves
+    ///
+    /// The sentinel STRING (`[NP-ID:<UUID>]`) is unchanged — it's the
+    /// notes-fallback parser anchor and changing it would orphan
+    /// already-pushed reminders. Only its placement moves.
+    ///
+    /// `unitFormatter` is retained as a parameter for source/test
+    /// compatibility, but the new body doesn't reference units; tests
+    /// can drop their formatter argument or keep passing the default.
     public static func payload(
         for item: Item,
         locationsByID: [Location.ID: Location],
         unitFormatter: @Sendable (Unit) -> String = defaultUnitFormatter
     ) -> ReminderPayload {
+        _ = unitFormatter  // retained for API compatibility; see doc.
         let locationName = locationsByID[item.locationID]?.name
-        let body = notesBody(
-            for: item,
-            locationName: locationName,
-            unitFormatter: unitFormatter
-        )
+        let body = notesBody(locationName: locationName)
         let sentinel = ReminderTag.notesSentinel(for: item.id)
-        // Sentinel on its own line, then a blank line, then the user-
-        // facing body. Preserves the user's ability to edit the body
-        // without nuking the parser anchor.
         let notes: String
         if body.isEmpty {
             notes = sentinel
         } else {
-            notes = "\(sentinel)\n\(body)"
+            notes = "\(body)\n\n\(sentinel)"
         }
         return ReminderPayload(
             title: item.name,
@@ -166,29 +182,12 @@ public enum RemindersReconciler {
         )
     }
 
-    /// User-friendly notes body — `"<qty> <unit> — <locationName>"`.
-    /// Drops segments that would render as empty so we never write
-    /// `"0  — Kitchen"` or `"3 ct — "`. If everything's empty (an
-    /// untyped `.count` unit with no location lookup) the body is `""`
-    /// and the caller emits sentinel-only notes.
-    private static func notesBody(
-        for item: Item,
-        locationName: String?,
-        unitFormatter: @Sendable (Unit) -> String
-    ) -> String {
-        let unitLabel = unitFormatter(item.unit)
-        let quantityAndUnit: String
-        if unitLabel.isEmpty {
-            quantityAndUnit = "\(item.quantity)"
-        } else {
-            quantityAndUnit = "\(item.quantity) \(unitLabel)"
-        }
-        let trimmedLocation =
-            locationName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if trimmedLocation.isEmpty {
-            return quantityAndUnit
-        }
-        return "\(quantityAndUnit) — \(trimmedLocation)"
+    /// User-facing notes body — currently the trimmed location name,
+    /// or `""` when no location resolves. Centralised so the format
+    /// can be changed in one place without the test surface drifting
+    /// out of sync.
+    private static func notesBody(locationName: String?) -> String {
+        locationName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 }
 

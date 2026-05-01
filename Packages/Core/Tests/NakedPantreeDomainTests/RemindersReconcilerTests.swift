@@ -93,10 +93,15 @@ struct RemindersReconcilerTests {
         #expect(payload.title == "Sourdough")
         #expect(payload.nakedPantreeID == item.id)
         #expect(payload.url == ReminderTag.url(for: item.id))
-        // Notes contain the sentinel and the user-friendly body.
+        // Notes contain the sentinel and the user-facing body
+        // (location-only, post-format-revisit).
         #expect(payload.notes.contains(ReminderTag.notesSentinel(for: item.id)))
         #expect(payload.notes.contains("Kitchen Pantry"))
-        #expect(payload.notes.contains("2"))
+        // Quantity must NOT leak into the notes — earlier we wrote
+        // "1 — Kitchen Pantry" and that read as confusing on the
+        // device. The body is the location only.
+        #expect(!payload.notes.contains(" — Kitchen Pantry"))
+        #expect(!payload.notes.contains("2 ct"))
     }
 
     @Test("Multiple creates are sorted by title for determinism")
@@ -111,32 +116,29 @@ struct RemindersReconcilerTests {
         #expect(plan.creates.map(\.payload.title) == ["Apple", "Zebra"])
     }
 
-    @Test("Unit .count omits the empty label so notes don't read '2  — Kitchen'")
-    func notesOmitEmptyUnitLabel() {
+    @Test("Notes are formatted as 'location\\n\\nsentinel' when location resolves")
+    func notesPlaceLocationFirstAndSentinelLast() {
         let item = Self.makeItem(name: "Apples", quantity: 2, unit: .count)
         let payload = RemindersReconciler.payload(
             for: item,
             locationsByID: Self.locationsByID
         )
-        // Should be "[NP-ID:UUID]\n2 — Kitchen Pantry", not "2  — ...".
-        #expect(payload.notes.contains("2 — Kitchen Pantry"))
-        #expect(!payload.notes.contains("2  —"))
+        let sentinel = ReminderTag.notesSentinel(for: item.id)
+        let expected = "Kitchen Pantry\n\n\(sentinel)"
+        #expect(payload.notes == expected)
     }
 
-    @Test("Missing location resolves to body without the location segment")
-    func notesOmitMissingLocation() {
+    @Test("Missing location resolves to sentinel-only notes")
+    func notesAreSentinelOnlyWithoutLocation() {
         let item = Self.makeItem(name: "Mystery", quantity: 1, unit: .count)
         let payload = RemindersReconciler.payload(
             for: item,
             // Empty lookup — location id won't resolve.
             locationsByID: [:]
         )
-        let stripped = payload.notes.replacingOccurrences(
-            of: ReminderTag.notesSentinel(for: item.id),
-            with: ""
-        )
-        let body = stripped.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-        #expect(body == "1")
+        // Sentinel-only — no leading body, no trailing whitespace
+        // around it.
+        #expect(payload.notes == ReminderTag.notesSentinel(for: item.id))
     }
 
     // MARK: Leave / title-update branch
