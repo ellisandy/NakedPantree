@@ -1,6 +1,7 @@
 import EventKit
 import Foundation
 import NakedPantreeDomain
+import os
 
 /// Issue #155 — production binding for `RemindersService`. The only
 /// file in the codebase that imports EventKit. App-target placement
@@ -32,6 +33,17 @@ import NakedPantreeDomain
 final class EventKitRemindersService: RemindersService, @unchecked Sendable {
     private let store: EKEventStore
 
+    /// Issue #162 diagnostic log. Tagged with subsystem
+    /// `cc.mnmlst.nakedpantree` and category `reminders` so a single
+    /// Console.app filter — `subsystem:cc.mnmlst.nakedpantree
+    /// category:reminders` — captures the full picker-empty-state
+    /// trace. Lifetime: keep until #162 closes; then trim to whatever
+    /// is genuinely load-bearing.
+    private static let logger = Logger(
+        subsystem: "cc.mnmlst.nakedpantree",
+        category: "reminders"
+    )
+
     /// Construct against a shared `EKEventStore`. Production builds
     /// pass `EKEventStore()`; tests can pass a stub subclass if they
     /// need to (none of our current tests do — the reconciler tests
@@ -47,8 +59,17 @@ final class EventKitRemindersService: RemindersService, @unchecked Sendable {
         // access (we read existing reminders to dedupe and write new
         // ones). The older write-only API would force a different
         // reconciliation path — not worth it for the v1 surface.
+        let preStatus = EKEventStore.authorizationStatus(for: .reminder).rawValue
+        Self.logger.notice(
+            "requestAccess: pre-grant authorizationStatus=\(preStatus, privacy: .public)"
+        )
         do {
             let granted = try await store.requestFullAccessToReminders()
+            let postStatus = EKEventStore.authorizationStatus(for: .reminder).rawValue
+            Self.logger.notice(
+                // swiftlint:disable:next line_length
+                "requestAccess: granted=\(granted, privacy: .public) postStatus=\(postStatus, privacy: .public)"
+            )
             if granted {
                 // TestFlight build 58 bug: `EKEventStore` caches its
                 // source list at construction time. Our store is
@@ -63,6 +84,7 @@ final class EventKitRemindersService: RemindersService, @unchecked Sendable {
                 // already in sync) and removes the order-of-init
                 // pitfall. See `EKEventStore.reset()` headerdoc.
                 store.reset()
+                Self.logger.notice("requestAccess: store.reset() called")
             }
             return granted ? .granted : .denied
         } catch {
@@ -70,25 +92,43 @@ final class EventKitRemindersService: RemindersService, @unchecked Sendable {
             // present that as `.denied` (the UI flow is identical) and
             // let the caller's `.denied` branch surface the deep link
             // to Settings.
+            Self.logger.error(
+                "requestAccess: threw — \(error.localizedDescription, privacy: .public)"
+            )
             return .denied
         }
     }
 
     func availableLists() async throws -> [RemindersListSummary] {
         try requireAccess()
+        let sources = store.sources
         let calendars = store.calendars(for: .reminder)
-        return
-            calendars
-            // Subscribed / read-only calendars surface in EventKit but
-            // throw on save. Filtering them here means the picker
-            // only offers lists we can actually write into.
-            .filter { $0.allowsContentModifications }
-            .map { calendar in
-                RemindersListSummary(
-                    id: calendar.calendarIdentifier,
-                    title: calendar.title
-                )
-            }
+        Self.logger.notice(
+            // swiftlint:disable:next line_length
+            "availableLists: sources.count=\(sources.count, privacy: .public) calendars.count=\(calendars.count, privacy: .public)"
+        )
+        for (index, source) in sources.enumerated() {
+            Self.logger.notice(
+                // swiftlint:disable:next line_length
+                "availableLists: source[\(index, privacy: .public)] title='\(source.title, privacy: .public)' sourceType=\(source.sourceType.rawValue, privacy: .public)"
+            )
+        }
+        for (index, calendar) in calendars.enumerated() {
+            Self.logger.notice(
+                // swiftlint:disable:next line_length
+                "availableLists: calendar[\(index, privacy: .public)] title='\(calendar.title, privacy: .public)' allowsContentModifications=\(calendar.allowsContentModifications, privacy: .public) sourceTitle='\(calendar.source?.title ?? "<nil>", privacy: .public)' sourceType=\(calendar.source?.sourceType.rawValue ?? -1, privacy: .public)"
+            )
+        }
+        let writable = calendars.filter { $0.allowsContentModifications }
+        Self.logger.notice(
+            "availableLists: writable.count=\(writable.count, privacy: .public)"
+        )
+        return writable.map { calendar in
+            RemindersListSummary(
+                id: calendar.calendarIdentifier,
+                title: calendar.title
+            )
+        }
     }
 
     func snapshots(in listID: String) async throws -> [ReminderSnapshot] {
