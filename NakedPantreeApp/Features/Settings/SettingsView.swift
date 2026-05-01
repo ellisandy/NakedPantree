@@ -76,6 +76,14 @@ struct SettingsView: View {
         category: "sharing"
     )
 
+    /// Issue #162 trace. Same subsystem so a single Console filter
+    /// covers the whole picker flow; category `reminders` lets the
+    /// share-flow logger above stay independent.
+    private static let remindersLogger = Logger(
+        subsystem: "cc.mnmlst.nakedpantree",
+        category: "reminders"
+    )
+
     var body: some View {
         @Bindable var settings = settings
         NavigationStack {
@@ -284,17 +292,33 @@ struct SettingsView: View {
     /// - other EventKit errors → present the error message in an
     ///   alert and let the user retry
     private func loadRemindersListsAndPresent() async {
+        Self.remindersLogger.notice("settings.loadRemindersListsAndPresent: entry")
         do {
             let access = try await remindersService.requestAccess()
+            Self.remindersLogger.notice(
+                // swiftlint:disable:next line_length
+                "settings.loadRemindersListsAndPresent: requestAccess returned \(String(describing: access), privacy: .public)"
+            )
             guard access == .granted else {
+                Self.remindersLogger.notice(
+                    "settings.loadRemindersListsAndPresent: not granted, bailing"
+                )
                 remindersListPickerError =
                     "Turn on Reminders for Naked Pantree in Settings, then try again."
                 return
             }
             let lists = try await remindersService.availableLists()
+            Self.remindersLogger.notice(
+                // swiftlint:disable:next line_length
+                "settings.loadRemindersListsAndPresent: got \(lists.count, privacy: .public) lists, presenting"
+            )
             remindersListPickerLists = lists
             isPresentingRemindersListPicker = true
         } catch {
+            Self.remindersLogger.error(
+                // swiftlint:disable:next line_length
+                "settings.loadRemindersListsAndPresent: caught \(error.localizedDescription, privacy: .public)"
+            )
             remindersListPickerError = error.localizedDescription
         }
     }
