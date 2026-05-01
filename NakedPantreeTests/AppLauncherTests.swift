@@ -2,6 +2,7 @@ import Foundation
 import Testing
 
 @testable import NakedPantree
+@testable import NakedPantreeDomain
 
 /// Coverage for the issue #106 store-load failure surface. The previous
 /// `fatalError` crashed the app on every launch when Core Data couldn't
@@ -169,7 +170,12 @@ extension LiveDependencies {
             ),
             notificationScheduler: NotificationScheduler(),
             notificationRouting: NotificationRoutingService(),
-            notificationSettings: NotificationSettings()
+            notificationSettings: NotificationSettings(),
+            // Issue #155: stub the Reminders surfaces so launcher
+            // tests don't need to rebuild EventKit. `InMemoryRemindersService`
+            // is `Sendable`-friendly and exists for exactly this use case.
+            remindersService: InMemoryRemindersService(),
+            remindersListPreference: RemindersListPreference()
         )
     }
 }

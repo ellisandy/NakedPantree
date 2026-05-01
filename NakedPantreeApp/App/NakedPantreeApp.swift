@@ -45,6 +45,11 @@ struct NakedPantreeApp: App {
                     .environment(\.notificationScheduler, dependencies.notificationScheduler)
                     .environment(\.notificationRouting, dependencies.notificationRouting)
                     .environment(\.notificationSettings, dependencies.notificationSettings)
+                    .environment(\.remindersService, dependencies.remindersService)
+                    .environment(
+                        \.remindersListPreference,
+                        dependencies.remindersListPreference
+                    )
             case .failed(let failure):
                 DataRecoveryView(
                     errorDescription: failure.errorDescription,

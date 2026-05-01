@@ -26,6 +26,8 @@ struct SettingsView: View {
     @Environment(\.notificationSettings) private var settings
     @Environment(\.repositories) private var repositories
     @Environment(\.householdSharing) private var householdSharing
+    @Environment(\.remindersService) private var remindersService
+    @Environment(\.remindersListPreference) private var remindersListPreference
     @Environment(\.dismiss) private var dismiss
 
     /// Loaded asynchronously in `.task` from the household repository.
@@ -53,6 +55,15 @@ struct SettingsView: View {
     /// own type doc for the full root-cause writeup.
     @State private var locationFormMode: LocationFormView.Mode?
 
+    /// Issue #155: re-pick state for the Reminders list. Settings
+    /// owns the picker presentation here (not the row) so the same
+    /// SwiftUI presentation-context fix from build #52 applies — a
+    /// `.sheet(isPresented:)` inside a Form's Section can collapse
+    /// the whole sheet stack on present.
+    @State private var isPresentingRemindersListPicker = false
+    @State private var remindersListPickerLists: [RemindersListSummary] = []
+    @State private var remindersListPickerError: String?
+
     /// Trace for #90 (blank Share Household sheet on TestFlight).
     /// Same subsystem/category as `CloudSharingControllerView` and
     /// `CloudHouseholdSharingService` so a single Console.app filter
@@ -75,6 +86,7 @@ struct SettingsView: View {
                     formMode: $locationFormMode
                 )
                 expiryRemindersSection
+                remindersListSection
             }
             .scrollContentBackground(.hidden)
             .background(Color.surface)
@@ -99,6 +111,32 @@ struct SettingsView: View {
                     // reload. Keeping that local to the section
                     // avoids threading another callback through.
                 }
+            }
+            // Issue #155: Reminders list re-pick. Lifted to the
+            // NavigationStack level for the same reason the location
+            // form is — section-attached sheets collapse the stack
+            // on present (build #52 root cause).
+            .sheet(isPresented: $isPresentingRemindersListPicker) {
+                RemindersListPickerSheet(
+                    lists: remindersListPickerLists,
+                    currentListID: remindersListPreference.listID,
+                    onPick: { picked in
+                        remindersListPreference.listID = picked.id
+                        isPresentingRemindersListPicker = false
+                    },
+                    onCancel: { isPresentingRemindersListPicker = false }
+                )
+            }
+            .alert(
+                "Couldn't load Reminders lists.",
+                isPresented: remindersErrorBinding,
+                presenting: remindersListPickerError
+            ) { _ in
+                Button("OK", role: .cancel) {
+                    remindersListPickerError = nil
+                }
+            } message: { message in
+                Text(message)
             }
             .sheet(item: $preparedShare) { prepared in
                 // Issue #90: by the time this closure fires, the share
@@ -168,6 +206,96 @@ struct SettingsView: View {
             }
         } header: {
             Text("Household")
+        }
+    }
+
+    /// Issue #155: Reminders integration row. The first push from
+    /// `NeedsRestockingView` writes the chosen list id to
+    /// `remindersListPreference.listID`; this row surfaces that
+    /// choice and lets the user re-pick or clear it.
+    ///
+    /// Voice §10: copy reads as a configuration moment, not a sync
+    /// failure path. The footer is a single light brand-tinted line
+    /// — same calibration as `expiryRemindersSection`.
+    @ViewBuilder
+    private var remindersListSection: some View {
+        Section {
+            LabeledContent("Reminders list") {
+                Text(currentListLabel)
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityIdentifier("settings.remindersList.current")
+            Button {
+                Task { await loadRemindersListsAndPresent() }
+            } label: {
+                Label(
+                    remindersListPreference.listID == nil
+                        ? "Pick a list"
+                        : "Change list",
+                    systemImage: "list.bullet.rectangle"
+                )
+            }
+            .accessibilityIdentifier("settings.remindersList.change")
+            if remindersListPreference.listID != nil {
+                Button(role: .destructive) {
+                    remindersListPreference.listID = nil
+                } label: {
+                    Label("Clear chosen list", systemImage: "xmark.circle")
+                }
+                .accessibilityIdentifier("settings.remindersList.clear")
+            }
+        } header: {
+            Text("Reminders")
+        } footer: {
+            Text(
+                "We'll write your restock items into this list when "
+                    + "you tap Push to Reminders."
+            )
+        }
+    }
+
+    /// Display string for the "Reminders list" row. Renders the list
+    /// title when we can resolve it (post-launch the picker results
+    /// are cached), otherwise the raw id, otherwise an em-dash.
+    private var currentListLabel: String {
+        guard let id = remindersListPreference.listID else { return "—" }
+        if let cached = remindersListPickerLists.first(where: { $0.id == id }) {
+            return cached.title
+        }
+        // Fallback when the picker hasn't been opened yet — the user
+        // sees an opaque short id, but tapping "Change list" loads
+        // the names and the next render replaces it.
+        return "(picked)"
+    }
+
+    private var remindersErrorBinding: Binding<Bool> {
+        Binding(
+            get: { remindersListPickerError != nil },
+            set: { newValue in
+                if !newValue { remindersListPickerError = nil }
+            }
+        )
+    }
+
+    /// Fetch available Reminders lists, then present the picker.
+    /// Failure modes:
+    /// - permission denied → friendly alert with the Settings deep
+    ///   link (matches `NeedsRestockingView` shape)
+    /// - other EventKit errors → present the error message in an
+    ///   alert and let the user retry
+    private func loadRemindersListsAndPresent() async {
+        do {
+            let access = try await remindersService.requestAccess()
+            guard access == .granted else {
+                remindersListPickerError =
+                    "Turn on Reminders for Naked Pantree in Settings, then try again."
+                return
+            }
+            let lists = try await remindersService.availableLists()
+            remindersListPickerLists = lists
+            isPresentingRemindersListPicker = true
+        } catch {
+            remindersListPickerError = error.localizedDescription
         }
     }
 
