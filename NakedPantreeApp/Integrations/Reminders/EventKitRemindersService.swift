@@ -107,8 +107,42 @@ final class EventKitRemindersService: RemindersService, @unchecked Sendable {
             Self.logger.error("availableLists: requireAccess threw — bailing")
             throw error
         }
+        // Issue #162 cold-cache mitigation. The user reported tapping
+        // "Pick a list" right after granting permission and seeing the
+        // picker render with zero lists, then a few minutes later
+        // re-tapping and seeing all eight. EKEventStore's iCloud
+        // sources are populated asynchronously; on a fresh grant the
+        // first read of `calendars(for: .reminder)` returns an empty
+        // array even though the user demonstrably has lists.
+        //
+        // Apple ships two relevant hooks:
+        //
+        // - `refreshSourcesIfNecessary()` — initiates a sync if one is
+        //   due. No-op when the cache is already warm.
+        // - `EKEventStoreChangedNotification` — fires when the store's
+        //   data changes, including after a permission grant or a
+        //   completed sync.
+        //
+        // Strategy: refresh, read, and if empty wait up to 10s for
+        // the change notification then re-read. 10s is the hard cap —
+        // anything longer reads as "broken" and the user's instinct
+        // is to tap again, which lands them in a worse state. The
+        // Settings row presents a spinner during the wait so the
+        // gap doesn't feel silent.
+        store.refreshSourcesIfNecessary()
+        var calendars = store.calendars(for: .reminder)
+        if calendars.isEmpty {
+            Self.logger.notice(
+                "availableLists: cold-cache, awaiting EKEventStoreChanged (10s cap)"
+            )
+            await Self.waitForStoreChangeOrTimeout(seconds: 10)
+            calendars = store.calendars(for: .reminder)
+            let postWaitCount = calendars.count
+            Self.logger.notice(
+                "availableLists: post-wait calendars.count=\(postWaitCount, privacy: .public)"
+            )
+        }
         let sources = store.sources
-        let calendars = store.calendars(for: .reminder)
         Self.logger.notice(
             // swiftlint:disable:next line_length
             "availableLists: sources.count=\(sources.count, privacy: .public) calendars.count=\(calendars.count, privacy: .public)"
@@ -286,5 +320,71 @@ final class EventKitRemindersService: RemindersService, @unchecked Sendable {
                 message: error.localizedDescription
             )
         }
+    }
+
+    /// Issue #162 — block until EventKit posts an
+    /// `EKEventStoreChangedNotification` or `seconds` elapse,
+    /// whichever comes first. Used by `availableLists()` to wait out
+    /// the iCloud cold-cache window after a fresh permission grant.
+    ///
+    /// Implementation: an `AsyncStream` wraps a one-shot block-based
+    /// observer; the stream's `onTermination` removes the observer so
+    /// neither the change-wait task nor the timeout task can leak it.
+    /// A task group races the two; whichever finishes first cancels
+    /// the other. `static` so the closure passed to
+    /// `addObserver(forName:object:queue:using:)` doesn't capture
+    /// `self` (the class is `@unchecked Sendable` and the observer
+    /// callback runs on whatever queue NotificationCenter chooses —
+    /// keeping `self` out of the closure removes that contract).
+    ///
+    /// **Why the `ObserverBox` class:** `NSObjectProtocol` (the type
+    /// `addObserver` returns) isn't `Sendable`. To carry the observer
+    /// reference into the `@Sendable onTermination` closure we wrap
+    /// it in a tiny `@unchecked Sendable` box. The box is written
+    /// exactly once (synchronously, inside the `AsyncStream`
+    /// initializer) and read exactly once (in `onTermination`, which
+    /// fires after the stream terminates) — no concurrent access, so
+    /// `@unchecked` is honest here.
+    private static func waitForStoreChangeOrTimeout(
+        seconds: TimeInterval
+    ) async {
+        let timeoutNanos = UInt64(seconds * 1_000_000_000)
+        let center = NotificationCenter.default
+        let box = ObserverBox()
+
+        let stream = AsyncStream<Void> { continuation in
+            box.observer = center.addObserver(
+                forName: .EKEventStoreChanged,
+                object: nil,
+                queue: nil
+            ) { _ in
+                continuation.yield(())
+            }
+            continuation.onTermination = { [box] _ in
+                if let observer = box.observer {
+                    center.removeObserver(observer)
+                }
+            }
+        }
+
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                for await _ in stream {
+                    return
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: timeoutNanos)
+            }
+            _ = await group.next()
+            group.cancelAll()
+        }
+    }
+
+    /// See `waitForStoreChangeOrTimeout` — just a reference cell so
+    /// the non-Sendable `NSObjectProtocol` can transit a `@Sendable`
+    /// closure boundary without spurious warnings.
+    private final class ObserverBox: @unchecked Sendable {
+        var observer: NSObjectProtocol?
     }
 }

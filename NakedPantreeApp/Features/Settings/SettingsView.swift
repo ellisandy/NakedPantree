@@ -22,6 +22,19 @@ import os
 /// configuration moment, not a permission flow. Copy stays plain and
 /// useful so users in a hurry can scan it without rolling their eyes
 /// (§10 checklist), with a single light brand-consistent line.
+///
+/// **Multi-sheet conflict (issue #162).** SwiftUI's `.sheet` modifier
+/// resolves at most one presentation per view. Earlier this file had
+/// three (`locationFormMode`, `isPresentingRemindersListPicker`,
+/// `preparedShare`) stacked on the NavigationStack. Probe build #165
+/// proved that stacking caused the Reminders picker to mount and
+/// auto-dismiss within ~553 ms — SwiftUI couldn't decide which sheet
+/// the view was asking for and tore everything down. The fix is to
+/// fold all three presentations through a single `.sheet(item:)`
+/// driven by `SettingsSheet`. Per-sheet payloads (form mode, picker
+/// lists, prepared share) stay on separate state vars so the enum
+/// itself can be a thin tag without dragging non-Equatable
+/// CloudKit types through Equatable synthesis.
 struct SettingsView: View {
     @Environment(\.notificationSettings) private var settings
     @Environment(\.repositories) private var repositories
@@ -36,33 +49,44 @@ struct SettingsView: View {
     /// whole screen — the share action doesn't depend on the name.
     @State private var household: Household?
 
-    /// Issue #90: share preparation state machine. Prep runs *before*
-    /// the sheet presents so `UICloudSharingController(share:container:)`
-    /// can be constructed against an already-resolved share — the
-    /// non-deprecated path. `preparedShare != nil` drives the sheet;
+    /// Issue #162: single source of truth for which sheet is on
+    /// screen. Set at the call sites (Add Location button, Pick a
+    /// list button, Share Household button); reset to nil whenever
+    /// the user dismisses the sheet (gesture, save, cancel). The
+    /// `.onChange` watcher on this clears the matching payload vars
+    /// below.
+    @State private var presentedSheet: SettingsSheet?
+
+    /// Form mode payload for `SettingsSheet.locationForm`. Held
+    /// separately so the enum can be a thin tag and so the
+    /// `LocationsSection` can write here via the `presentForm`
+    /// callback below.
+    @State private var locationFormMode: LocationFormView.Mode?
+
+    /// Issue #90: prepared share payload for `SettingsSheet.shareHousehold`.
     /// `isPreparingShare` drives the spinner; `shareError` drives the
-    /// alert.
+    /// alert. Kept separate from the enum because `CKShare` /
+    /// `CKContainer` aren't `Equatable` and folding them inline would
+    /// block automatic Equatable synthesis on `SettingsSheet`.
     @State private var preparedShare: ShareSheetPreparation.PreparedShare?
     @State private var isPreparingShare = false
     @State private var shareError: ShareErrorAlert?
-
-    /// Build #52 bug fix: `LocationsSection`'s create/edit form sheet
-    /// state lives here (not in the section) so the `.sheet(item:)`
-    /// modifier can attach at the NavigationStack level. Attaching
-    /// the form sheet inside a Form's Section caused SwiftUI's
-    /// presentation-context resolution to dismiss the entire sheet
-    /// stack the moment the form tried to appear. See the section's
-    /// own type doc for the full root-cause writeup.
-    @State private var locationFormMode: LocationFormView.Mode?
 
     /// Issue #155: re-pick state for the Reminders list. Settings
     /// owns the picker presentation here (not the row) so the same
     /// SwiftUI presentation-context fix from build #52 applies — a
     /// `.sheet(isPresented:)` inside a Form's Section can collapse
     /// the whole sheet stack on present.
-    @State private var isPresentingRemindersListPicker = false
     @State private var remindersListPickerLists: [RemindersListSummary] = []
     @State private var remindersListPickerError: String?
+
+    /// Issue #162 — signal channel for `LocationsSection` to refresh
+    /// after the form sheet dismisses. The lifted `.sheet(item:)`
+    /// pattern means the section can no longer observe its own
+    /// `formMode` going nil; instead the parent bumps this token in
+    /// `.onChange(of: presentedSheet)`. `&+=` is overflow-safe so a
+    /// long-running view session never traps.
+    @State private var locationsReloadToken = 0
 
     /// Trace for #90 (blank Share Household sheet on TestFlight).
     /// Same subsystem/category as `CloudSharingControllerView` and
@@ -91,7 +115,11 @@ struct SettingsView: View {
                 householdSection
                 LocationsSection(
                     householdID: household?.id,
-                    formMode: $locationFormMode
+                    presentForm: { mode in
+                        locationFormMode = mode
+                        presentedSheet = .locationForm
+                    },
+                    reloadToken: locationsReloadToken
                 )
                 expiryRemindersSection
                 remindersListSection
@@ -105,35 +133,27 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            // Build #52 fix: present the LocationsSection's
-            // create/edit form here, at the NavigationStack level,
-            // rather than from inside the Form's Section. Section-
-            // attached `.sheet(item:)` made SwiftUI dismiss the
-            // entire sheet stack on present. The section flips
-            // `locationFormMode` via its parent-owned binding; this
-            // modifier renders the actual sheet.
-            .sheet(item: $locationFormMode) { mode in
-                LocationFormView(mode: mode) {
-                    // No-op — `LocationsSection.onChange(of: formMode)`
-                    // catches the dismiss edge and triggers its own
-                    // reload. Keeping that local to the section
-                    // avoids threading another callback through.
-                }
+            // Issue #162: single presentation point. Stacking three
+            // `.sheet` modifiers on this NavigationStack let SwiftUI
+            // race them; the loser tore the winner back down. One
+            // modifier, one source of truth — the sheet stays put.
+            .sheet(item: $presentedSheet) { sheet in
+                presentedSheetContent(for: sheet)
             }
-            // Issue #155: Reminders list re-pick. Lifted to the
-            // NavigationStack level for the same reason the location
-            // form is — section-attached sheets collapse the stack
-            // on present (build #52 root cause).
-            .sheet(isPresented: $isPresentingRemindersListPicker) {
-                RemindersListPickerSheet(
-                    lists: remindersListPickerLists,
-                    currentListID: remindersListPreference.listID,
-                    onPick: { picked in
-                        remindersListPreference.listID = picked.id
-                        isPresentingRemindersListPicker = false
-                    },
-                    onCancel: { isPresentingRemindersListPicker = false }
-                )
+            .onChange(of: presentedSheet) { oldValue, newValue in
+                guard newValue == nil else { return }
+                // Sheet just dismissed (gesture / save / cancel). Clear
+                // the per-sheet payload, and bump the locations reload
+                // token if the form was the one that closed.
+                switch oldValue {
+                case .locationForm:
+                    locationFormMode = nil
+                    locationsReloadToken &+= 1
+                case .shareHousehold:
+                    preparedShare = nil
+                case .remindersListPicker, .none:
+                    break
+                }
             }
             .alert(
                 "Couldn't load Reminders lists.",
@@ -146,19 +166,6 @@ struct SettingsView: View {
             } message: { message in
                 Text(message)
             }
-            .sheet(item: $preparedShare) { prepared in
-                // Issue #90: by the time this closure fires, the share
-                // is already a real `CKShare` resolved by
-                // `ShareSheetPreparation`. The controller uses
-                // `init(share:container:)` and renders participant UI
-                // immediately — no more lazy preparation handler.
-                CloudSharingControllerView(
-                    share: prepared.share,
-                    container: prepared.container,
-                    onCompletion: { preparedShare = nil }
-                )
-                .ignoresSafeArea()
-            }
             .alert(item: $shareError) { wrapper in
                 Alert(
                     title: Text("Couldn't share"),
@@ -167,6 +174,50 @@ struct SettingsView: View {
                 )
             }
             .task { await loadHousehold() }
+        }
+    }
+
+    /// Sheet content router. Pulled out of the modifier so the body
+    /// stays scannable and the switch can grow another case without
+    /// a giant inline closure.
+    @ViewBuilder
+    private func presentedSheetContent(for sheet: SettingsSheet) -> some View {
+        switch sheet {
+        case .locationForm:
+            if let mode = locationFormMode {
+                LocationFormView(mode: mode) {
+                    // No-op — `.onChange(of: presentedSheet)` above
+                    // bumps `locationsReloadToken` when this sheet
+                    // closes, which triggers `LocationsSection` to
+                    // refresh. Keeping the save callback empty here
+                    // means save / cancel / drag-down all share the
+                    // same dismissal path.
+                }
+            }
+        case .remindersListPicker:
+            RemindersListPickerSheet(
+                lists: remindersListPickerLists,
+                currentListID: remindersListPreference.listID,
+                onPick: { picked in
+                    remindersListPreference.listID = picked.id
+                    presentedSheet = nil
+                },
+                onCancel: { presentedSheet = nil }
+            )
+        case .shareHousehold:
+            if let prepared = preparedShare {
+                // Issue #90: by the time this closure fires, the share
+                // is already a real `CKShare` resolved by
+                // `ShareSheetPreparation`. The controller uses
+                // `init(share:container:)` and renders participant UI
+                // immediately — no more lazy preparation handler.
+                CloudSharingControllerView(
+                    share: prepared.share,
+                    container: prepared.container,
+                    onCompletion: { presentedSheet = nil }
+                )
+                .ignoresSafeArea()
+            }
         }
     }
 
@@ -244,6 +295,7 @@ struct SettingsView: View {
                 )
             }
             .accessibilityIdentifier("settings.remindersList.change")
+            .disabled(isLoadingRemindersLists)
             if remindersListPreference.listID != nil {
                 Button(role: .destructive) {
                     remindersListPreference.listID = nil
@@ -251,6 +303,14 @@ struct SettingsView: View {
                     Label("Clear chosen list", systemImage: "xmark.circle")
                 }
                 .accessibilityIdentifier("settings.remindersList.clear")
+            }
+            if isLoadingRemindersLists {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Loading your Reminders lists…")
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityIdentifier("settings.remindersList.loading")
             }
         } header: {
             Text("Reminders")
@@ -285,6 +345,15 @@ struct SettingsView: View {
         )
     }
 
+    /// Issue #162: spinner gate for the Reminders-list load. Right
+    /// after a fresh permission grant `EKEventStore`'s iCloud sources
+    /// can take ~10s to populate; `EventKitRemindersService` blocks
+    /// inside `availableLists` until they do (or the timeout fires).
+    /// During that window the row should read as in-flight rather
+    /// than silently spin — users were tapping again and re-entering
+    /// the same wait, then assumed the feature was broken.
+    @State private var isLoadingRemindersLists = false
+
     /// Fetch available Reminders lists, then present the picker.
     /// Failure modes:
     /// - permission denied → friendly alert with the Settings deep
@@ -293,6 +362,8 @@ struct SettingsView: View {
     ///   alert and let the user retry
     private func loadRemindersListsAndPresent() async {
         Self.remindersLogger.notice("settings.loadRemindersListsAndPresent: entry")
+        isLoadingRemindersLists = true
+        defer { isLoadingRemindersLists = false }
         do {
             let access = try await remindersService.requestAccess()
             Self.remindersLogger.notice(
@@ -313,7 +384,7 @@ struct SettingsView: View {
                 "settings.loadRemindersListsAndPresent: got \(lists.count, privacy: .public) lists, presenting"
             )
             remindersListPickerLists = lists
-            isPresentingRemindersListPicker = true
+            presentedSheet = .remindersListPicker
         } catch {
             Self.remindersLogger.error(
                 // swiftlint:disable:next line_length
@@ -404,10 +475,24 @@ struct SettingsView: View {
         switch result {
         case .success(let payload):
             preparedShare = payload
+            presentedSheet = .shareHousehold
         case .failure(let error):
             shareError = ShareErrorAlert(message: error.localizedDescription)
         }
     }
+}
+
+/// Issue #162 — single tag for whichever sheet `SettingsView` has
+/// presented. Per-sheet payloads (form mode, picker lists, prepared
+/// share) live on separate `@State` vars so this enum can stay thin
+/// and `Hashable` without dragging non-`Equatable` CloudKit types
+/// (`CKShare`, `CKContainer`) into automatic synthesis.
+private enum SettingsSheet: String, Identifiable, Hashable {
+    case locationForm
+    case remindersListPicker
+    case shareHousehold
+
+    var id: String { rawValue }
 }
 
 /// `Identifiable` wrapper so `.alert(item:)` can drive on a single

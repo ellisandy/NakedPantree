@@ -8,31 +8,44 @@ import SwiftUI
 /// "add location", and locations are a rare-action surface that
 /// doesn't deserve top-level real estate.
 ///
-/// **Why `formMode` is a parent-owned `@Binding`:** in the original
-/// implementation this section attached `.sheet(item: $formMode)`
-/// directly. That presented inside the outer Settings sheet's
-/// content, deep under a Form's Section. SwiftUI's presentation
-/// context resolution couldn't tell which sheet was being asked
-/// to present from a Section-attached `.sheet`, and would dismiss
-/// the entire sheet stack — including the parent Settings sheet —
-/// the moment the form tried to appear. Build #52 reproduced this
-/// every time. Fix: lift `formMode` and the `.sheet(item:)`
+/// **Why the section can't present its own form sheet (build #52
+/// regression).** The original implementation attached
+/// `.sheet(item: $formMode)` directly to the section, deep under a
+/// Form's Section. SwiftUI's presentation-context resolution couldn't
+/// tell which sheet was being asked to present from a Section-attached
+/// `.sheet` and would dismiss the entire sheet stack — including the
+/// parent Settings sheet — the moment the form tried to appear. Build
+/// #52 reproduced this every time. Fix: lift the `.sheet(item:)`
 /// modifier to `SettingsView`'s NavigationStack, where the
 /// presentation context is unambiguous. The section keeps its
 /// own state for delete-confirmation (a `confirmationDialog`,
 /// which is action-sheet-shaped and doesn't have the same
 /// presentation-context bug).
 ///
-/// **Reload semantics:** when the form sheet dismisses (whether
-/// the user saved or cancelled), `formMode` flips back to nil.
-/// `.onChange(of: formMode)` catches that edge and re-fetches the
-/// locations list — that's why the parent doesn't need to thread
-/// an `onSaved` callback through.
+/// **Why a callback rather than a binding (issue #162).** Earlier
+/// the section took `@Binding var formMode` and wrote into it on Add
+/// / Edit taps; the parent watched that binding to drive its sheet.
+/// That works in isolation but means the parent has to expose
+/// `formMode` as a sheet driver — and once Settings grew a third
+/// sheet (the Reminders picker), three independent `.sheet` modifiers
+/// were stacked on the NavigationStack and SwiftUI could no longer
+/// resolve the unique presentation. The probe in PR #165 confirmed
+/// the picker auto-dismissed within ~553 ms. Issue #162 folded all
+/// three presentations through a single `.sheet(item: $presentedSheet)`
+/// in the parent. The section now hands a `LocationFormView.Mode` up
+/// via the `presentForm` callback, and the parent maps that into the
+/// shared sheet enum.
+///
+/// **Reload semantics.** With the binding removed the section can no
+/// longer observe its own `formMode` going nil to re-fetch. Instead
+/// the parent bumps `reloadToken` after `presentedSheet` flips back to
+/// nil with the form having been the last presented sheet; the
+/// section's `.onChange(of: reloadToken)` triggers the reload.
 ///
 /// **Why a standalone view:** extracting this from `SettingsView`
-/// makes the load / form-callback / reload cycle unit-testable
-/// without standing up the whole Settings screen. Mirrors the
-/// existing `RestockSection` pattern in `ItemDetailView`.
+/// keeps the load / form-callback / reload cycle decoupled from the
+/// Settings screen as a whole. Mirrors the existing `RestockSection`
+/// pattern in `ItemDetailView`.
 struct LocationsSection: View {
     /// Household whose locations this section manages. Settings
     /// resolves the household once (same `loadHousehold()` it uses for
@@ -41,10 +54,16 @@ struct LocationsSection: View {
     /// that case rather than a stale list against the wrong household.
     let householdID: Household.ID?
 
-    /// Form-mode state owned by `SettingsView` — see the type doc for
-    /// why this is a binding rather than `@State`. The section sets
-    /// it on Add / Edit taps; the parent renders the actual sheet.
-    @Binding var formMode: LocationFormView.Mode?
+    /// Issue #162 — request the parent to present the create/edit
+    /// form sheet for the given mode. Replaces the prior `@Binding`
+    /// pattern; see the type doc for the full root-cause writeup.
+    let presentForm: (LocationFormView.Mode) -> Void
+
+    /// Issue #162 — bumped by the parent any time the section should
+    /// re-fetch (specifically: after the lifted form sheet dismisses).
+    /// Replaces the prior self-observed `.onChange(of: formMode)`
+    /// trigger.
+    let reloadToken: Int
 
     @Environment(\.repositories) private var repositories
 
@@ -63,7 +82,7 @@ struct LocationsSection: View {
                 }
                 ForEach(locations) { location in
                     Button {
-                        formMode = .edit(location)
+                        presentForm(.edit(location))
                     } label: {
                         Label(location.name, systemImage: location.kind.systemImage)
                             .foregroundStyle(.primary)
@@ -78,7 +97,7 @@ struct LocationsSection: View {
                     }
                 }
                 Button {
-                    formMode = .create(householdID: householdID)
+                    presentForm(.create(householdID: householdID))
                 } label: {
                     Label("Add Location", systemImage: "plus.circle.fill")
                 }
@@ -103,14 +122,12 @@ struct LocationsSection: View {
             Text("This also removes every item inside it.")
         }
         .task(id: householdID) { await reload() }
-        // Reload when the parent-rendered form sheet dismisses
-        // (either via save or cancel — both flip formMode back to
-        // nil). This is the missing wire that the lifted `.sheet`
-        // would otherwise need an `onSaved` callback to do.
-        .onChange(of: formMode) { _, newValue in
-            if newValue == nil {
-                Task { await reload() }
-            }
+        // Issue #162: parent bumps `reloadToken` after the lifted form
+        // sheet dismisses. We reload regardless of whether the user
+        // saved or cancelled — same belt-and-suspenders behaviour as
+        // before the binding was removed.
+        .onChange(of: reloadToken) { _, _ in
+            Task { await reload() }
         }
     }
 
