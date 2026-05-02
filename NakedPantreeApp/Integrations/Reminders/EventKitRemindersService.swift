@@ -185,13 +185,28 @@ final class EventKitRemindersService: RemindersService, @unchecked Sendable {
         // Creates don't need a pre-fetch — we just allocate fresh
         // `EKReminder`s and save. Doing them up front (outside the
         // mutation closure) keeps the dependent-fetch path tight.
-        for create in plan.creates {
+        Self.logger.notice(
+            "apply: creates.count=\(plan.creates.count, privacy: .public)"
+        )
+        for (index, create) in plan.creates.enumerated() {
             let reminder = EKReminder(eventStore: store)
             reminder.calendar = calendar
             reminder.title = create.payload.title
             reminder.notes = create.payload.notes
             reminder.url = create.payload.url
+            // Diag (post-#168): pin what we *wrote* so the fetch-side
+            // log can confirm round-trip vs sync-strip vs display-suppress.
+            let writtenURL = reminder.url?.absoluteString ?? "<nil>"
+            Self.logger.notice(
+                // swiftlint:disable:next line_length
+                "apply: create[\(index, privacy: .public)] title='\(reminder.title ?? "<nil>", privacy: .public)' url-pre-save='\(writtenURL, privacy: .public)'"
+            )
             try save(reminder)
+            let postSaveURL = reminder.url?.absoluteString ?? "<nil>"
+            Self.logger.notice(
+                // swiftlint:disable:next line_length
+                "apply: create[\(index, privacy: .public)] saved id='\(reminder.calendarItemIdentifier, privacy: .public)' url-post-save='\(postSaveURL, privacy: .public)'"
+            )
         }
 
         // Updates + completions both target existing rows by
@@ -234,17 +249,55 @@ final class EventKitRemindersService: RemindersService, @unchecked Sendable {
     /// Sendable snapshots inside the completion closure — `EKReminder`
     /// is not `Sendable`, so we extract the values we care about
     /// before the continuation crosses actor boundaries.
+    ///
+    /// **Diag (post-#168).** The user installed the build with the
+    /// `nakedpantree://` scheme registered and reported the URL field
+    /// in Apple's Reminders.app still rendered blank on a freshly
+    /// pushed reminder. Three branches that could explain the empty
+    /// chip:
+    /// - (a) we never wrote `reminder.url` at all
+    /// - (b) we wrote it; iCloud sync stripped it
+    /// - (c) we wrote it; it's still there; Reminders.app refuses to
+    ///   render non-http URLs as a chip
+    ///
+    /// Logging each fetched reminder's url, notes-prefix, and title
+    /// answers (a) vs (b)/(c) directly — if the log shows a
+    /// `nakedpantree://item/<UUID>` value, we wrote it AND it
+    /// survived; the empty chip is then a Reminders.app display
+    /// quirk and the fix is a different scheme (universal link, etc.).
+    /// If the log shows `<nil>`, we either never wrote it or sync
+    /// dropped it; we'd then add write-side logging in `apply` to
+    /// disambiguate.
     private func fetchSnapshots(
         matching predicate: NSPredicate
     ) async throws -> [ReminderSnapshot] {
         try await withCheckedThrowingContinuation { continuation in
             store.fetchReminders(matching: predicate) { results in
                 guard let results else {
+                    Self.logger.notice("fetchSnapshots: results=nil")
                     continuation.resume(returning: [])
                     return
                 }
-                let snapshots = results.map { reminder in
-                    ReminderSnapshot(
+                Self.logger.notice(
+                    "fetchSnapshots: results.count=\(results.count, privacy: .public)"
+                )
+                let snapshots = results.enumerated().map { index, reminder in
+                    let urlString = reminder.url?.absoluteString ?? "<nil>"
+                    // Notes can be long; cap to 100 chars so the log
+                    // doesn't blow up on hand-edited reminders.
+                    let notes = reminder.notes ?? "<nil>"
+                    let notesPreview: String
+                    if notes.count > 100 {
+                        notesPreview = String(notes.prefix(100)) + "…"
+                    } else {
+                        notesPreview = notes
+                    }
+                    let title = reminder.title ?? "<nil>"
+                    Self.logger.notice(
+                        // swiftlint:disable:next line_length
+                        "fetchSnapshots: row[\(index, privacy: .public)] title='\(title, privacy: .public)' url='\(urlString, privacy: .public)' notes='\(notesPreview, privacy: .public)'"
+                    )
+                    return ReminderSnapshot(
                         calendarItemIdentifier: reminder.calendarItemIdentifier,
                         nakedPantreeID: ReminderTag.resolveItemID(
                             url: reminder.url,
