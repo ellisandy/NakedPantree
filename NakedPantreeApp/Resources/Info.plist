@@ -51,6 +51,35 @@
     <string>Take photos of items in your pantry so you can spot them at a glance.</string>
     <key>NSRemindersFullAccessUsageDescription</key>
     <string>So Naked Pantree can drop your restock list into Reminders when you ask.</string>
+    <!--
+        Issue #155 follow-up — register `nakedpantree://` so the URL we
+        attach to each pushed reminder (`nakedpantree://item/<UUID>`)
+        becomes a tappable chip in Apple's Reminders.app. Without
+        registering, Reminders treats the URL field as something it
+        doesn't know how to open and renders it blank — the user sees
+        an empty URL row even though the data is there.
+
+        `CFBundleURLName` uses reverse-DNS to namespace the scheme to
+        this app, matching `cc.mnmlst.nakedpantree`. The single scheme
+        entry is enough; we don't anticipate a second app claiming
+        `nakedpantree://` so the array stays one-deep.
+
+        The actual route handling lives in `RootView.onOpenURL` —
+        parse the URL via `ReminderTag.itemID(fromURL:)`, publish to
+        the existing notification-routing channel, and re-use the
+        bootstrap-aware deep-link path.
+    -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>cc.mnmlst.nakedpantree.deeplink</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>nakedpantree</string>
+            </array>
+        </dict>
+    </array>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>
