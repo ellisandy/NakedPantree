@@ -139,26 +139,46 @@ public enum RemindersReconciler {
     /// and so the adapter can reuse the encoder when the reconciler
     /// queues a create.
     ///
-    /// **Notes shape (revisited).** Earlier the body led with quantity
-    /// + unit + location (`"1 — Old Garage Pantry"`) and the sentinel
-    /// went *first*, before the body. A user looking at the reminder
-    /// in Apple's Reminders.app saw the `[NP-ID:UUID]` line as the
-    /// primary content with a confusing `"1 — Old Garage Pantry"`
-    /// underneath — quantity in our domain means "how many I have,"
-    /// which has no useful interpretation as a shopping-list line.
+    /// **Notes shape (revisited again — issue #155 follow-up).** A user
+    /// reported that the URL chip on the dedicated URL row of pushed
+    /// reminders renders blank in Apple's Reminders.app, even though
+    /// `EKReminder.url` is set on save (confirmed via `url-post-save`
+    /// log) and even though the `nakedpantree://` scheme is registered
+    /// (PR #168). A manually-pasted URL into the same field on a
+    /// hand-edited reminder *does* persist + render — proving the
+    /// field accepts the scheme, but our writes don't survive the
+    /// iCloud round-trip (or the chip render) for reasons we haven't
+    /// fully isolated.
+    ///
+    /// Workaround: embed the deep-link URL inline in the notes body.
+    /// Reminders.app auto-detects URLs anywhere in notes and renders
+    /// them as tappable chips inline — that path *does* persist for
+    /// our writes (notes are surviving the round-trip; the original
+    /// "Garage" body screenshot proved it). We still write
+    /// `EKReminder.url` too so the dedicated-row chip lights up the
+    /// day Apple/iCloud sorts out whatever's stripping it on our path.
     ///
     /// The current shape:
-    /// - body = the location name only, when one resolves
-    /// - sentinel goes at the *end* of the notes after a blank line
-    /// - sentinel-only notes when no location resolves
+    /// ```
+    /// <location>
     ///
-    /// The sentinel STRING (`[NP-ID:<UUID>]`) is unchanged — it's the
-    /// notes-fallback parser anchor and changing it would orphan
-    /// already-pushed reminders. Only its placement moves.
+    /// nakedpantree://item/<UUID>
+    ///
+    /// [NP-ID:<UUID>]
+    /// ```
+    /// - location body line drops if no location resolves
+    /// - URL line is always present (item.id is always known)
+    /// - sentinel always last for the parser anchor
+    /// - blank lines between sections so each renders as its own
+    ///   visual block
+    ///
+    /// The sentinel STRING (`[NP-ID:<UUID>]`) is unchanged — orphaning
+    /// already-pushed reminders by changing the anchor would force
+    /// duplicate creates. Same belt-and-suspenders rationale as before.
     ///
     /// `unitFormatter` is retained as a parameter for source/test
-    /// compatibility, but the new body doesn't reference units; tests
-    /// can drop their formatter argument or keep passing the default.
+    /// compatibility but isn't referenced — units don't make it into
+    /// the body.
     public static func payload(
         for item: Item,
         locationsByID: [Location.ID: Location],
@@ -166,14 +186,18 @@ public enum RemindersReconciler {
     ) -> ReminderPayload {
         _ = unitFormatter  // retained for API compatibility; see doc.
         let locationName = locationsByID[item.locationID]?.name
-        let body = notesBody(locationName: locationName)
+        let location = notesBody(locationName: locationName)
+        let deepLink = ReminderTag.url(for: item.id)?.absoluteString
         let sentinel = ReminderTag.notesSentinel(for: item.id)
-        let notes: String
-        if body.isEmpty {
-            notes = sentinel
-        } else {
-            notes = "\(body)\n\n\(sentinel)"
-        }
+        // Order: location (optional) → deep-link URL → sentinel. Each
+        // section separated by a blank line so Reminders.app treats
+        // them as distinct visual blocks.
+        let sections = [
+            location.isEmpty ? nil : location,
+            deepLink,
+            sentinel,
+        ].compactMap { $0 }
+        let notes = sections.joined(separator: "\n\n")
         return ReminderPayload(
             title: item.name,
             notes: notes,

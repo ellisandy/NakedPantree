@@ -93,13 +93,18 @@ struct RemindersReconcilerTests {
         #expect(payload.title == "Sourdough")
         #expect(payload.nakedPantreeID == item.id)
         #expect(payload.url == ReminderTag.url(for: item.id))
-        // Notes contain the sentinel and the user-facing body
-        // (location-only, post-format-revisit).
+        // Notes contain the sentinel, the location, and the deep-link
+        // URL (auto-linked by Reminders.app — the dedicated URL row
+        // doesn't render the chip for our writes; #155 follow-up).
         #expect(payload.notes.contains(ReminderTag.notesSentinel(for: item.id)))
         #expect(payload.notes.contains("Kitchen Pantry"))
+        let expectedURL = ReminderTag.url(for: item.id)?.absoluteString ?? ""
+        #expect(!expectedURL.isEmpty)
+        #expect(payload.notes.contains(expectedURL))
         // Quantity must NOT leak into the notes — earlier we wrote
         // "1 — Kitchen Pantry" and that read as confusing on the
-        // device. The body is the location only.
+        // device. The body is the location only (plus the deep-link
+        // line and sentinel).
         #expect(!payload.notes.contains(" — Kitchen Pantry"))
         #expect(!payload.notes.contains("2 ct"))
     }
@@ -116,29 +121,34 @@ struct RemindersReconcilerTests {
         #expect(plan.creates.map(\.payload.title) == ["Apple", "Zebra"])
     }
 
-    @Test("Notes are formatted as 'location\\n\\nsentinel' when location resolves")
-    func notesPlaceLocationFirstAndSentinelLast() {
+    @Test("Notes are formatted as 'location\\n\\nurl\\n\\nsentinel' when location resolves")
+    func notesArrangeLocationDeepLinkSentinel() {
         let item = Self.makeItem(name: "Apples", quantity: 2, unit: .count)
         let payload = RemindersReconciler.payload(
             for: item,
             locationsByID: Self.locationsByID
         )
         let sentinel = ReminderTag.notesSentinel(for: item.id)
-        let expected = "Kitchen Pantry\n\n\(sentinel)"
+        let url = ReminderTag.url(for: item.id)?.absoluteString ?? ""
+        let expected = "Kitchen Pantry\n\n\(url)\n\n\(sentinel)"
         #expect(payload.notes == expected)
     }
 
-    @Test("Missing location resolves to sentinel-only notes")
-    func notesAreSentinelOnlyWithoutLocation() {
+    @Test("Missing location resolves to 'url\\n\\nsentinel' notes")
+    func notesAreDeepLinkAndSentinelWithoutLocation() {
         let item = Self.makeItem(name: "Mystery", quantity: 1, unit: .count)
         let payload = RemindersReconciler.payload(
             for: item,
             // Empty lookup — location id won't resolve.
             locationsByID: [:]
         )
-        // Sentinel-only — no leading body, no trailing whitespace
-        // around it.
-        #expect(payload.notes == ReminderTag.notesSentinel(for: item.id))
+        // No leading location body, but the deep-link line + sentinel
+        // are still present so Reminders.app autolinks the URL inline
+        // and the notes-fallback parser still finds the anchor.
+        let sentinel = ReminderTag.notesSentinel(for: item.id)
+        let url = ReminderTag.url(for: item.id)?.absoluteString ?? ""
+        let expected = "\(url)\n\n\(sentinel)"
+        #expect(payload.notes == expected)
     }
 
     // MARK: Leave / title-update branch
