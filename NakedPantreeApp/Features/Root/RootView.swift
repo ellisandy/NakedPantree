@@ -114,6 +114,20 @@ struct RootView: View {
                 await applyDeepLink(itemID: id)
             }
         }
+        // Issue #155 follow-up: a tap on a pushed reminder's URL
+        // chip in Apple's Reminders.app delivers
+        // `nakedpantree://item/<UUID>` here. Funnel into
+        // `notificationRouting.pendingItemID` so cold-launch (URL
+        // arrives during `.loading` and gets buffered by SwiftUI
+        // until this view appears) and warm-tap (app already
+        // running) both flow through the same `applyDeepLink` path
+        // wired above. URLs that don't match our shape silently
+        // drop — `ReminderTag.itemID(fromURL:)` returns nil for
+        // hand-typed `https://` and similar.
+        .onOpenURL { url in
+            guard let itemID = ReminderTag.itemID(fromURL: url) else { return }
+            notificationRouting.pendingItemID = itemID
+        }
         .alert("That item is gone.", isPresented: $isShowingMissingItemAlert) {
             Button("OK", role: .cancel) {}
         }
