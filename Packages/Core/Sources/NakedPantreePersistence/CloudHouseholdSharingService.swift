@@ -93,6 +93,16 @@ public final class CloudHouseholdSharingService: HouseholdSharingService, @unche
             existing[CKShare.SystemFieldKey.title] = "Naked Pantree"
             Self.logShareState(existing, label: "existing")
             Self.logger.notice("prepareShare complete")
+            // print() fallback alongside Logger.notice — the previous two
+            // share traces showed our os_log entries silently dropping in
+            // the critical window between `prepareShare` and Messages
+            // activation. stderr survives os_log batching / Console.app
+            // de-dup, so this gives a hard answer to "what URL did our
+            // code actually see?" before we commit to a fix path.
+            print(
+                // swiftlint:disable:next line_length
+                "[NP-PREP] existing share: url=\(existing.url?.absoluteString ?? "nil") participants=\(existing.participants.count)"
+            )
             return (existing, cloudKitContainer)
         }
         Self.logger.notice("no existing share found")
@@ -119,6 +129,12 @@ public final class CloudHouseholdSharingService: HouseholdSharingService, @unche
         share[CKShare.SystemFieldKey.title] = "Naked Pantree"
         Self.logShareState(share, label: "new")
         Self.logger.notice("prepareShare complete")
+        // See comment on the existing-share branch above for why we're
+        // belt-and-bracing with print() here.
+        print(
+            // swiftlint:disable:next line_length
+            "[NP-PREP] new share: url=\(share.url?.absoluteString ?? "nil") participants=\(share.participants.count)"
+        )
         return (share, resolvedContainer)
     }
 
