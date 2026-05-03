@@ -54,6 +54,14 @@ struct CloudSharingControllerView: UIViewControllerRepresentable {
         let urlString = share.url?.absoluteString ?? "<nil>"
         let recordName = share.recordID.recordName
         let participantCount = share.participants.count
+        // print() fallback — the prior two share traces had our
+        // Logger.notice entries silently dropping in this exact window
+        // (between prepareShare and Messages activation). stderr
+        // survives os_log batching / Console de-dup, so we get a hard
+        // answer to "did UICloudSharingController see a populated URL?"
+        print(
+            "[NP-MAKEVC] url=\(urlString) recordName=\(recordName) participants=\(participantCount)"
+        )
         Self.logger.notice(
             // swiftlint:disable:next line_length
             "makeUIViewController: share state url='\(urlString, privacy: .public)' recordName='\(recordName, privacy: .public)' participants.count=\(participantCount, privacy: .public)"
