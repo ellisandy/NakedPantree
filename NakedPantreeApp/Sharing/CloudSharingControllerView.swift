@@ -45,6 +45,19 @@ struct CloudSharingControllerView: UIViewControllerRepresentable {
     )
 
     func makeUIViewController(context: Context) -> UICloudSharingController {
+        // Diag (post-#90 follow-up) — answer "what state is the share
+        // in at the moment we hand it to the system controller?" The
+        // Messages link-preview hang is most plausibly explained by
+        // `share.url` being nil here; the system controller would
+        // then hand a nil URL to the Messages share extension. Log
+        // the full state so the trace ends the speculation.
+        let urlString = share.url?.absoluteString ?? "<nil>"
+        let recordName = share.recordID.recordName
+        let participantCount = share.participants.count
+        Self.logger.notice(
+            // swiftlint:disable:next line_length
+            "makeUIViewController: share state url='\(urlString, privacy: .public)' recordName='\(recordName, privacy: .public)' participants.count=\(participantCount, privacy: .public)"
+        )
         Self.logger.notice(
             "makeUIViewController: creating UICloudSharingController(share:container:)"
         )
@@ -68,8 +81,14 @@ struct CloudSharingControllerView: UIViewControllerRepresentable {
             self.onCompletion = onCompletion
         }
 
+        nonisolated private static let logger = Logger(
+            subsystem: "cc.mnmlst.nakedpantree",
+            category: "sharing"
+        )
+
         func itemTitle(for csc: UICloudSharingController) -> String? {
-            "Naked Pantree"
+            Self.logger.notice("delegate.itemTitle requested")
+            return "Naked Pantree"
         }
 
         func cloudSharingController(
@@ -79,14 +98,25 @@ struct CloudSharingControllerView: UIViewControllerRepresentable {
             // `UICloudSharingController` shows its own alert for the
             // failure before dismissing; we just propagate the
             // dismissal up so the sheet binding clears.
+            Self.logger.error(
+                "delegate.failedToSaveShare: \(error.localizedDescription, privacy: .public)"
+            )
             onCompletion()
         }
 
         func cloudSharingControllerDidSaveShare(_ csc: UICloudSharingController) {
+            // Post-save the share's `url` should be populated by
+            // CloudKit. Log it so a trace from a successful invite +
+            // a hanging-Messages invite can be compared side by side.
+            let urlString = csc.share?.url?.absoluteString ?? "<nil>"
+            Self.logger.notice(
+                "delegate.didSaveShare: post-save url='\(urlString, privacy: .public)'"
+            )
             onCompletion()
         }
 
         func cloudSharingControllerDidStopSharing(_ csc: UICloudSharingController) {
+            Self.logger.notice("delegate.didStopSharing")
             onCompletion()
         }
     }
