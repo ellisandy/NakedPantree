@@ -87,12 +87,15 @@ public final class CloudHouseholdSharingService: HouseholdSharingService, @unche
         // new-share branch; for the existing-share branch there's no
         // `share(_:to:)` result to extract from, so fall back to the
         // injected `cloudKitContainer`.
+        Self.logger.notice("checking for existing share")
         if let existing = try existingShare(matching: objectID) {
             Self.logger.notice("returning existing share")
             existing[CKShare.SystemFieldKey.title] = "Naked Pantree"
+            Self.logShareState(existing, label: "existing")
             Self.logger.notice("prepareShare complete")
             return (existing, cloudKitContainer)
         }
+        Self.logger.notice("no existing share found")
 
         Self.logger.notice("calling NSPersistentCloudKitContainer.share")
         // Resolve the object on the viewContext's main queue (Apple's
@@ -114,8 +117,38 @@ public final class CloudHouseholdSharingService: HouseholdSharingService, @unche
         Self.logger.notice("container.share returned a new CKShare")
         let (share, resolvedContainer) = result
         share[CKShare.SystemFieldKey.title] = "Naked Pantree"
+        Self.logShareState(share, label: "new")
         Self.logger.notice("prepareShare complete")
         return (share, resolvedContainer)
+    }
+
+    /// Diag (post-#90 follow-up). Logs the bits of CKShare state most
+    /// likely to explain the Messages-link-preview hang the user is
+    /// seeing: whether `share.url` has been populated by CloudKit yet,
+    /// how many participants the share has, and what role/acceptance
+    /// they're in. If `share.url` is nil at this point, that's the
+    /// smoking gun — `UICloudSharingController` will hand a nil/empty
+    /// URL to the Messages share extension and Messages's link-preview
+    /// fetch will fail or stall.
+    private static func logShareState(_ share: CKShare, label: String) {
+        let urlString = share.url?.absoluteString ?? "<nil>"
+        let recordName = share.recordID.recordName
+        let zoneName = share.recordID.zoneID.zoneName
+        let participantCount = share.participants.count
+        Self.logger.notice(
+            // swiftlint:disable:next line_length
+            "share(\(label, privacy: .public)) state: url='\(urlString, privacy: .public)' recordName='\(recordName, privacy: .public)' zone='\(zoneName, privacy: .public)' participants.count=\(participantCount, privacy: .public)"
+        )
+        for (index, participant) in share.participants.enumerated() {
+            // Identity is omitted — the lookupInfo can leak userRecordID
+            // / emailAddress; role + acceptance is enough to diagnose.
+            let role = participant.role.rawValue
+            let acceptance = participant.acceptanceStatus.rawValue
+            Self.logger.notice(
+                // swiftlint:disable:next line_length
+                "share(\(label, privacy: .public)) participant[\(index, privacy: .public)] role=\(role, privacy: .public) acceptance=\(acceptance, privacy: .public)"
+            )
+        }
     }
 
     /// Resolves the household domain id to its `NSManagedObjectID` on
