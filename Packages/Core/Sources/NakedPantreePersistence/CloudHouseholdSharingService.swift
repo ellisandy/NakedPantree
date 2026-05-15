@@ -89,21 +89,17 @@ public final class CloudHouseholdSharingService: HouseholdSharingService, @unche
         // injected `cloudKitContainer`.
         Self.logger.notice("checking for existing share")
         if let existing = try existingShare(matching: objectID) {
-            Self.logger.notice("returning existing share")
+            Self.logger.notice("found existing share locally")
             existing[CKShare.SystemFieldKey.title] = "Naked Pantree"
-            Self.logShareState(existing, label: "existing")
+            Self.logShareState(existing, label: "existing(local)")
+            let hydrated = try await hydrateShareURL(existing)
+            Self.logShareState(hydrated, label: "existing(hydrated)")
             Self.logger.notice("prepareShare complete")
-            // print() fallback alongside Logger.notice — the previous two
-            // share traces showed our os_log entries silently dropping in
-            // the critical window between `prepareShare` and Messages
-            // activation. stderr survives os_log batching / Console.app
-            // de-dup, so this gives a hard answer to "what URL did our
-            // code actually see?" before we commit to a fix path.
             print(
                 // swiftlint:disable:next line_length
-                "[NP-PREP] existing share: url=\(existing.url?.absoluteString ?? "nil") participants=\(existing.participants.count)"
+                "[NP-PREP] existing share: url=\(hydrated.url?.absoluteString ?? "nil") participants=\(hydrated.participants.count)"
             )
-            return (existing, cloudKitContainer)
+            return (hydrated, cloudKitContainer)
         }
         Self.logger.notice("no existing share found")
 
@@ -127,15 +123,95 @@ public final class CloudHouseholdSharingService: HouseholdSharingService, @unche
         Self.logger.notice("container.share returned a new CKShare")
         let (share, resolvedContainer) = result
         share[CKShare.SystemFieldKey.title] = "Naked Pantree"
-        Self.logShareState(share, label: "new")
+        Self.logShareState(share, label: "new(initial)")
+        let hydrated = try await hydrateShareURL(share)
+        Self.logShareState(hydrated, label: "new(hydrated)")
         Self.logger.notice("prepareShare complete")
-        // See comment on the existing-share branch above for why we're
-        // belt-and-bracing with print() here.
         print(
             // swiftlint:disable:next line_length
-            "[NP-PREP] new share: url=\(share.url?.absoluteString ?? "nil") participants=\(share.participants.count)"
+            "[NP-PREP] new share: url=\(hydrated.url?.absoluteString ?? "nil") participants=\(hydrated.participants.count)"
         )
-        return (share, resolvedContainer)
+        return (hydrated, resolvedContainer)
+    }
+
+    /// Ensure the share has a server-populated `url` before handing it
+    /// to `UICloudSharingController`.
+    ///
+    /// **Why this exists.** `fetchShares(matching:)` returns the local
+    /// Core Data copy of the share. `share.url` is populated by the
+    /// CloudKit server when the share is reified there; until that
+    /// round-trip completes, the local copy carries `url = nil`. We
+    /// were observing the existing-share branch return a `url = nil`
+    /// share — the system controller then handed an empty URL to the
+    /// Messages share extension and the message went out with nothing
+    /// to attach (#90 follow-up).
+    ///
+    /// The fix covers both root causes that produce the same symptom:
+    /// 1. **Local copy stale.** Share is on the server, our local copy
+    ///    just hasn't been hydrated yet. `database.record(for:)`
+    ///    returns the server-side CKShare, which has the URL.
+    /// 2. **Never pushed.** The original `share(_:to:)` queued the
+    ///    share for upload but the mirror never completed it (offline,
+    ///    silent failure). `record(for:)` 404s with `.unknownItem`,
+    ///    then `modifyRecords(saving:)` pushes the share and the
+    ///    server response carries the URL.
+    private func hydrateShareURL(_ share: CKShare) async throws -> CKShare {
+        if share.url != nil {
+            return share
+        }
+        Self.logger.notice("hydrateShareURL: local share has no URL — hydrating from server")
+        let database = cloudKitContainer.privateCloudDatabase
+
+        // Attempt 1 — fetch the share from the server in case our local
+        // copy is just stale.
+        do {
+            let fetched = try await database.record(for: share.recordID)
+            if let fetchedShare = fetched as? CKShare, fetchedShare.url != nil {
+                Self.logger.notice("hydrateShareURL: server fetch produced URL")
+                return fetchedShare
+            }
+            Self.logger.notice(
+                "hydrateShareURL: server returned record but URL still nil — falling through to save"
+            )
+        } catch let error as CKError where error.code == .unknownItem {
+            Self.logger.notice(
+                "hydrateShareURL: share not on server (unknownItem) — falling through to save"
+            )
+        } catch {
+            Self.logger.error(
+                // swiftlint:disable:next line_length
+                "hydrateShareURL: server fetch failed (\(error.localizedDescription, privacy: .public)) — falling through to save"
+            )
+        }
+
+        // Attempt 2 — push the local share to the server. `.changedKeys`
+        // creates the record if it doesn't exist and merges otherwise;
+        // we don't want `.allKeys` because it would clobber a server
+        // copy that's diverged (e.g. a participant we don't know about
+        // locally has accepted).
+        let (saveResults, _) = try await database.modifyRecords(
+            saving: [share],
+            deleting: [],
+            savePolicy: .changedKeys,
+            atomically: false
+        )
+        switch saveResults[share.recordID] {
+        case .success(let savedRecord):
+            if let savedShare = savedRecord as? CKShare, savedShare.url != nil {
+                Self.logger.notice("hydrateShareURL: server save produced URL")
+                return savedShare
+            }
+            Self.logger.error("hydrateShareURL: server save succeeded but URL still nil")
+            throw HouseholdSharingError.shareURLUnavailable
+        case .failure(let error):
+            Self.logger.error(
+                "hydrateShareURL: server save failed (\(error.localizedDescription, privacy: .public))"
+            )
+            throw error
+        case .none:
+            Self.logger.error("hydrateShareURL: no result for share recordID in save response")
+            throw HouseholdSharingError.shareURLUnavailable
+        }
     }
 
     /// Diag (post-#90 follow-up). Logs the bits of CKShare state most
@@ -199,4 +275,10 @@ public final class CloudHouseholdSharingService: HouseholdSharingService, @unche
 
 public enum HouseholdSharingError: Error {
     case householdNotFound
+    /// Hydration completed without the server returning a populated
+    /// `share.url`. Should not happen under normal conditions — both
+    /// `record(for:)` and `modifyRecords(saving:)` populate URL on
+    /// success. Surface rather than silently returning a broken share
+    /// that would re-trigger the Messages-with-no-link symptom.
+    case shareURLUnavailable
 }
